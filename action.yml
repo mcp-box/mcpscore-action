@@ -1,0 +1,85 @@
+name: "mcpscore — MCP server audit"
+description: "Audit an MCP server with mcpscore: score it, gate CI on a threshold, and comment the report on the PR."
+author: "mcp-box"
+
+branding:
+  icon: "check-circle"
+  color: "green"
+
+inputs:
+  target:
+    description: "MCP server to audit — a URL (Streamable HTTP / SSE) or a local .py/.js server path."
+    required: true
+  version:
+    description: "mcpscore version to run (e.g. 0.8.0). Empty = latest."
+    required: false
+    default: ""
+  min-score:
+    description: "Fail the job if the main score percentage (0–100) is below this. Empty = no gate."
+    required: false
+    default: ""
+  min-readiness:
+    description: "Fail the job if the readiness percentage (0–100) is below this. Empty = no gate."
+    required: false
+    default: ""
+  comment:
+    description: "Post/update a report comment on the pull request (true/false)."
+    required: false
+    default: "true"
+  args:
+    description: "Extra arguments passed through to the mcpscore CLI."
+    required: false
+    default: ""
+  report-path:
+    description: "Where to write the JSON report."
+    required: false
+    default: "mcpscore-report.json"
+  github-token:
+    description: "Token used to post the PR comment. Needs pull-requests: write."
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  score:
+    description: "Points earned on the main score."
+    value: ${{ steps.audit.outputs.score }}
+  max-score:
+    description: "Maximum points on the main score."
+    value: ${{ steps.audit.outputs.max-score }}
+  percentage:
+    description: "Main score as an integer percentage."
+    value: ${{ steps.audit.outputs.percentage }}
+  readiness-score:
+    description: "Points earned on the next-spec readiness axis."
+    value: ${{ steps.audit.outputs.readiness-score }}
+  readiness-max:
+    description: "Maximum readiness points."
+    value: ${{ steps.audit.outputs.readiness-max }}
+  readiness-percentage:
+    description: "Readiness score as an integer percentage."
+    value: ${{ steps.audit.outputs.readiness-percentage }}
+  era:
+    description: "Observed lifecycle era: legacy, modern, or dual-era."
+    value: ${{ steps.audit.outputs.era }}
+  negotiated-version:
+    description: "Spec version the server negotiated."
+    value: ${{ steps.audit.outputs.negotiated-version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install uv
+      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
+    - name: Audit with mcpscore
+      id: audit
+      shell: bash
+      run: python3 "$GITHUB_ACTION_PATH/scripts/mcpscore_action.py"
+      env:
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_MIN_SCORE: ${{ inputs.min-score }}
+        INPUT_MIN_READINESS: ${{ inputs.min-readiness }}
+        INPUT_COMMENT: ${{ inputs.comment }}
+        INPUT_ARGS: ${{ inputs.args }}
+        INPUT_REPORT_PATH: ${{ inputs.report-path }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}

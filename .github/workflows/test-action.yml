@@ -1,0 +1,67 @@
+name: Test action
+
+# Exercises the action end-to-end against a live public MCP server, asserting
+# its outputs — this is what proves the composite action actually works.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  run-against-live-server:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          persist-credentials: false
+      - id: audit
+        uses: ./
+        with:
+          target: https://mcp.deepwiki.com/mcp
+          comment: "false" # no PR context on push; commenting is covered by real usage
+      - name: Assert outputs are populated
+        shell: bash
+        env:
+          SCORE: ${{ steps.audit.outputs.score }}
+          MAX: ${{ steps.audit.outputs.max-score }}
+          PCT: ${{ steps.audit.outputs.percentage }}
+          ERA: ${{ steps.audit.outputs.era }}
+        run: |
+          echo "score=$SCORE/$MAX ($PCT%) era=$ERA"
+          test -n "$SCORE"
+          test "$ERA" = "legacy"
+          test -f mcpscore-report.json
+
+  gate-passes-and-fails:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          persist-credentials: false
+      - name: A low threshold passes
+        uses: ./
+        with:
+          target: https://mcp.deepwiki.com/mcp
+          min-score: "10"
+          comment: "false"
+      - name: An impossible threshold fails (and we expect it to)
+        id: strict
+        continue-on-error: true
+        uses: ./
+        with:
+          target: https://mcp.deepwiki.com/mcp
+          min-score: "100"
+          comment: "false"
+      - name: Confirm the strict gate failed
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.strict.outcome }}
+        run: test "$OUTCOME" = "failure"

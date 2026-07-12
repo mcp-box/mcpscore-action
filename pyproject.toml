@@ -1,0 +1,41 @@
+[project]
+name = "mcpscore-action"
+version = "0.1.0"
+description = "GitHub Action that audits MCP servers with mcpscore"
+requires-python = ">=3.11"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.411",
+    "pytest>=9.1.1",
+    "ruff>=0.15.20",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "F", "E", "W", "I", "UP", "B", "C4", "SIM", "PTH", "RET", "TC",
+    "ANN001", "ANN002", "ANN003", "S", "T20", "RUF",
+]
+ignore = [
+    "S101",  # asserts are fine in tests
+    "COM812",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The action orchestrator prints to the runner log and shells out to uvx by design.
+"scripts/*.py" = ["T201", "S603", "S607"]
+"tests/*.py" = ["T201", "S603", "S607", "ANN001", "ANN002", "ANN003"]
+
+[tool.pyright]
+include = ["scripts"]
+pythonVersion = "3.11"
+reportMissingImports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-config", "--strict-markers"]
+filterwarnings = ["error"]
