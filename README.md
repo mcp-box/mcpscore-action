@@ -55,25 +55,25 @@ jobs:
 
 ## Inputs
 
-| Input | Default | Description |
-|---|---|---|
-| `target` | — (required) | MCP server URL, or local `.py`/`.js` path |
-| `version` | latest | mcpscore version to run (e.g. `0.8.0`) |
-| `min-score` | none | Fail if the main score % is below this (0–100) |
-| `min-readiness` | none | Fail if the readiness % is below this (0–100) |
-| `comment` | `true` | Post/update a report comment on the PR |
-| `args` | — | Extra arguments passed to the mcpscore CLI |
-| `report-path` | `mcpscore-report.json` | Where to write the JSON report |
-| `github-token` | `github.token` | Token for the PR comment (needs `pull-requests: write`) |
+| Input           | Default                | Description                                             |
+|-----------------|------------------------|---------------------------------------------------------|
+| `target`        | — (required)           | MCP server URL, or local `.py`/`.js` path               |
+| `version`       | latest                 | mcpscore version to run (e.g. `0.8.0`)                  |
+| `min-score`     | none                   | Fail if the main score % is below this (0–100)          |
+| `min-readiness` | none                   | Fail if the readiness % is below this (0–100)           |
+| `comment`       | `true`                 | Post/update a report comment on the PR                  |
+| `args`          | —                      | Extra arguments passed to the mcpscore CLI              |
+| `report-path`   | `mcpscore-report.json` | Where to write the JSON report                          |
+| `github-token`  | `github.token`         | Token for the PR comment (needs `pull-requests: write`) |
 
 ## Outputs
 
-| Output | Description |
-|---|---|
-| `score` / `max-score` / `percentage` | Main score |
-| `readiness-score` / `readiness-max` / `readiness-percentage` | Next-spec readiness score |
-| `era` | `legacy`, `modern`, or `dual-era` |
-| `negotiated-version` | Spec version the server negotiated |
+| Output                                                       | Description                        |
+|--------------------------------------------------------------|------------------------------------|
+| `score` / `max-score` / `percentage`                         | Main score                         |
+| `readiness-score` / `readiness-max` / `readiness-percentage` | Next-spec readiness score          |
+| `era`                                                        | `legacy`, `modern`, or `dual-era`  |
+| `negotiated-version`                                         | Spec version the server negotiated |
 
 ## How scoring works
 
