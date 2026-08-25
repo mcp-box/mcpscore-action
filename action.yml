@@ -11,7 +11,7 @@ inputs:
     description: "MCP server to audit — a URL (Streamable HTTP / SSE) or a local .py/.js server path."
     required: true
   version:
-    description: "mcpscore version to run (e.g. 0.8.0). Empty = latest."
+    description: "mcpscore version to run (e.g. 1.9.0). Empty = latest."
     required: false
     default: ""
   min-score:
