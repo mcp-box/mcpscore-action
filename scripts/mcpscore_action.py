@@ -117,13 +117,17 @@ def _config_lines(report: dict) -> list[str]:
     parts = [f"{off} rule{'s' if off != 1 else ''} off"] if off else []
     if reranked:
         parts.append(f"{reranked} re-ranked")
-    gate = block.get("gate")
+    # The report is another program's output; read the gate defensively so a
+    # partial block degrades to a vaguer line rather than a crashed comment.
+    gate = block.get("gate") or {}
+    fail_on = gate.get("fail_on", "?")
     if gate:
-        parts.append(f"gate at {gate['fail_on']}")
+        parts.append(f"gate at {fail_on}")
     lines = [f"**Config:** `{block.get('source', 'mcpscore.toml')}` — {', '.join(parts) if parts else 'no overrides'}"]
-    if gate and gate.get("failed"):
-        failed = ", ".join(f"`{rule_id}`" for rule_id in gate["failed"])
-        lines.append(f"**Gate failed:** {len(gate['failed'])} rule(s) at or above {gate['fail_on']}: {failed}")
+    failed_ids = gate.get("failed") or []
+    if failed_ids:
+        failed = ", ".join(f"`{rule_id}`" for rule_id in failed_ids)
+        lines.append(f"**Gate failed:** {len(failed_ids)} rule(s) at or above {fail_on}: {failed}")
     lines.append("")
     return lines
 
@@ -177,8 +181,9 @@ def cli_gate_failures(report: dict, code: int) -> list[str]:
     """Explain a CLI gate exit (3 or 4) from the report, so the job's error names the rules."""
     if code == 3:
         gate = (report.get("config") or {}).get("gate") or {}
-        if gate.get("failed"):
-            return [f"mcpscore [gate] fail_on = {gate['fail_on']}: failed rule(s) {', '.join(gate['failed'])}"]
+        failed_ids = gate.get("failed") or []
+        if failed_ids:
+            return [f"mcpscore [gate] fail_on = {gate.get('fail_on', '?')}: failed rule(s) {', '.join(failed_ids)}"]
         return ["mcpscore exited 3: a --fail-under gate passed through `args` was not met"]
     if code == 4:
         checks = (report.get("smoke") or {}).get("checks") or []

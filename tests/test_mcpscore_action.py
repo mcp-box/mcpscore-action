@@ -216,18 +216,34 @@ class TestConfiguredRuns:
 class TestMainWithCliGates:
     """A CLI gate exit still publishes the report, then fails the job with the reason."""
 
+    FAKE_TOKEN = "not-a-real-token"  # noqa: S105 — a test fixture value, not a credential
+
     def _run(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, code: int, stdout: str
     ) -> tuple[int, list[str], bool]:
         printed: list[str] = []
         commented = {"called": False}
+        # The environment a real pull_request run has: the event payload with the
+        # PR number, and the token action.yml defaults to github.token.
+        event_path = tmp_path / "event.json"
+        event_path.write_text(json.dumps({"pull_request": {"number": 7}}), encoding="utf-8")
+        monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
+        monkeypatch.setenv("GITHUB_REPOSITORY", "mcp-box/example")
+        monkeypatch.setenv("INPUT_GITHUB_TOKEN", self.FAKE_TOKEN)
         monkeypatch.setenv("INPUT_TARGET", "https://server.example/mcp")
         monkeypatch.setenv("INPUT_REPORT_PATH", str(tmp_path / "report.json"))
         monkeypatch.setenv("INPUT_COMMENT", "true")
         monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
         monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
         monkeypatch.setattr(action, "run_audit", lambda *a: (code, stdout, ""))
-        monkeypatch.setattr(action, "post_or_update_comment", lambda *a: commented.__setitem__("called", True))
+
+        def fake_comment(report: dict, token: str) -> None:
+            # Only the network call is stubbed; the arguments are the real ones.
+            assert token == self.FAKE_TOKEN
+            assert action._pr_number() == 7
+            commented["called"] = True
+
+        monkeypatch.setattr(action, "post_or_update_comment", fake_comment)
         monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(str(x) for x in a)))
         return action.main(), printed, commented["called"]
 
@@ -251,3 +267,23 @@ class TestMainWithCliGates:
         assert code == 1
         assert commented is False
         assert any("could not audit" in p for p in printed)
+
+
+class TestPartialConfigBlocks:
+    """The report is another program's output: a thin gate block must not crash the comment."""
+
+    def test_gate_without_fail_on_still_renders(self):
+        report = make_configured_report()
+        report["config"]["gate"] = {"failed": ["a"]}
+
+        body = action.build_report_markdown(report)
+
+        assert "gate at ?" in body
+        assert "**Gate failed:** 1 rule(s) at or above ?: `a`" in body
+        assert action.cli_gate_failures(report, 3) == ["mcpscore [gate] fail_on = ?: failed rule(s) a"]
+
+    def test_gate_without_failed_renders_no_gate_failure(self):
+        report = make_configured_report()
+        report["config"]["gate"] = {"fail_on": "HIGH"}
+
+        assert "Gate failed" not in action.build_report_markdown(report)
