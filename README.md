@@ -53,6 +53,23 @@ jobs:
 - run: echo "Scored ${{ steps.mcp.outputs.percentage }}% (era ${{ steps.mcp.outputs.era }})"
 ```
 
+### Turn rules off for this repository
+
+A `mcpscore.toml` in the checkout is picked up on its own. Rules set to `"off"`
+do not run, rules set to a severity name count at that severity, and a
+`[gate] fail_on = "high"` table fails the job on any failed rule at or above
+it. `min-score` then gates the configured score, and the comment says which
+file applied and what it changed. It never changes the badge or the score on
+mcpscore.dev. Details: [configure rules](https://docs.mcpscore.dev/configure-rules).
+
+```toml
+[rules]
+server_websiteurl_present = "off"
+
+[gate]
+fail_on = "high"
+```
+
 ## Inputs
 
 | Input           | Default                | Description                                             |
