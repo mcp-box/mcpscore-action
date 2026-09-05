@@ -47,7 +47,8 @@ from typing import NoReturn
 REPO = "mcp-box/mcpscore-action"
 ROOT = Path(__file__).resolve().parent.parent
 MAJOR_TAG_WAIT_SECONDS = 300
-STABLE_VERSION = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+# Strict SemVer numerics: no leading zeroes, so "01.2.3" cannot mint a "v01" tag.
+STABLE_VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 
 
 def run(*args: str, capture: bool = True) -> str:
@@ -112,10 +113,29 @@ def check_changelog(version: str) -> str:
     )
     if match is None:
         fail(f"CHANGELOG.md has no '## [{version}]' section")
-    if f"[{version}]: https://" not in changelog:
-        fail(f"CHANGELOG.md is missing the '[{version}]: ...' compare link at the bottom")
+    expected = expected_compare_link(changelog, version)
+    if not re.search(rf"^{re.escape(expected)}$", changelog, flags=re.MULTILINE):
+        fail(f"CHANGELOG.md is missing the compare link for {version}; expected exactly:\n  {expected}")
     ok(f"CHANGELOG has the [{version}] section and compare link")
     return match.group(1).strip()
+
+
+def expected_compare_link(changelog: str, version: str) -> str:
+    """The one compare link the changelog must carry for ``version``.
+
+    The previous release is the next ``## [X.Y.Z]`` heading below this
+    version's own, so a link that points at the wrong repository, the wrong
+    tag, or an unrelated URL is rejected rather than waved through by a
+    substring match. A first release links its tag instead of a comparison.
+    """
+    headings = re.findall(r"^## \[(\d+\.\d+\.\d+)\]", changelog, flags=re.MULTILINE)
+    if version not in headings:
+        fail(f"CHANGELOG.md has no '## [{version}]' section")
+    index = headings.index(version)
+    previous = headings[index + 1] if index + 1 < len(headings) else None
+    if previous is None:
+        return f"[{version}]: https://github.com/{REPO}/releases/tag/v{version}"
+    return f"[{version}]: https://github.com/{REPO}/compare/v{previous}...v{version}"
 
 
 def check_tag_absent(version: str) -> None:
@@ -135,6 +155,11 @@ def check_tag_absent(version: str) -> None:
 
 REVIEW_BOT_CHECKS = frozenset({"copilot-pull-request-reviewer", "Cursor Bugbot"})
 """Check runs registered by code-review bots: reviews, not CI gates."""
+
+REQUIRED_CHECKS = frozenset({"check", "run-against-live-server", "gate-passes-and-fails"})
+"""The job names that must have run on HEAD: CI's check job (ci.yml) and both
+jobs of the live end-to-end workflow (test-action.yml). A green subset is not
+a green release: a missing live run means the action was never exercised."""
 
 
 def check_ci_green(sha: str) -> None:
@@ -156,6 +181,9 @@ def check_ci_green(sha: str) -> None:
         if latest is None or timestamp > latest_timestamp:
             latest_runs[check["name"]] = check
     runs = list(latest_runs.values())
+    missing = sorted(REQUIRED_CHECKS - set(latest_runs))
+    if missing:
+        fail(f"required CI checks have not run on HEAD: {', '.join(missing)}")
     bad = [r for r in runs if r["status"] != "completed" or r["conclusion"] not in ("success", "skipped", "neutral")]
     if bad:
         details = ", ".join(f"{r['name']}: {r['conclusion'] or r['status']}" for r in bad)

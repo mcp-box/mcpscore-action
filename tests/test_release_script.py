@@ -29,7 +29,7 @@ class TestVersion:
     def test_major_tag(self, version: str, tag: str):
         assert release.major_tag(version) == tag
 
-    @pytest.mark.parametrize("version", ["1.2", "1.2.3b1", "1.2.3-rc.1", "v1.2.3"])
+    @pytest.mark.parametrize("version", ["1.2", "1.2.3b1", "1.2.3-rc.1", "v1.2.3", "01.2.3", "1.02.3", "1.2.03"])
     def test_rejects_anything_but_stable_semver(self, version: str):
         with pytest.raises(SystemExit):
             release.major_tag(version)
@@ -47,6 +47,38 @@ class TestChangelog:
         path = repo / "CHANGELOG.md"
         path.write_text(
             path.read_text(encoding="utf-8").replace("[1.2.3]: https://", "[1.2.3]: nope "), encoding="utf-8"
+        )
+        with pytest.raises(SystemExit):
+            release.check_changelog("1.2.3")
+
+    def test_expected_link_names_the_previous_release(self, repo: Path):
+        changelog = (repo / "CHANGELOG.md").read_text(encoding="utf-8")
+
+        assert release.expected_compare_link(changelog, "1.2.3") == (
+            "[1.2.3]: https://github.com/mcp-box/mcpscore-action/compare/v1.2.2...v1.2.3"
+        )
+
+    def test_first_release_links_its_tag(self):
+        changelog = "## [1.0.0] - 2026-07-12\n\nFirst.\n"
+
+        assert release.expected_compare_link(changelog, "1.0.0") == (
+            "[1.0.0]: https://github.com/mcp-box/mcpscore-action/releases/tag/v1.0.0"
+        )
+
+    @pytest.mark.parametrize(
+        "wrong",
+        [
+            "[1.2.3]: https://example.com",
+            "[1.2.3]: https://github.com/mcp-box/mcpscore/compare/v1.2.2...v1.2.3",
+            "[1.2.3]: https://github.com/mcp-box/mcpscore-action/compare/v1.2.1...v1.2.3",
+        ],
+    )
+    def test_fails_on_a_wrong_compare_link(self, repo: Path, wrong: str):
+        path = repo / "CHANGELOG.md"
+        text = path.read_text(encoding="utf-8")
+        path.write_text(
+            text.replace("[1.2.3]: https://github.com/mcp-box/mcpscore-action/compare/v1.2.2...v1.2.3", wrong),
+            encoding="utf-8",
         )
         with pytest.raises(SystemExit):
             release.check_changelog("1.2.3")
@@ -101,81 +133,52 @@ class TestGitState:
             release.check_git_state()
 
 
+# One run per job the release script requires, all green.
+ALL_GREEN = [
+    {"name": name, "status": "completed", "conclusion": "success", "started_at": "1", "completed_at": "2"}
+    for name in ("check", "run-against-live-server", "gate-passes-and-fails")
+]
+
+
 class TestCiGreen:
     def _runs(self, monkeypatch: pytest.MonkeyPatch, runs: list[dict]) -> None:
         monkeypatch.setattr(release, "run", lambda *a, **k: json.dumps(runs))
 
     def test_green(self, monkeypatch: pytest.MonkeyPatch):
-        self._runs(
-            monkeypatch,
-            [
-                {
-                    "name": "check",
-                    "status": "completed",
-                    "conclusion": "success",
-                    "started_at": "1",
-                    "completed_at": "2",
-                },
-                {
-                    "name": "run-against-live-server",
-                    "status": "completed",
-                    "conclusion": "success",
-                    "started_at": "1",
-                    "completed_at": "2",
-                },
-            ],
-        )
+        self._runs(monkeypatch, ALL_GREEN)
         release.check_ci_green("abc")
 
+    def test_a_missing_required_check_is_not_green(self, monkeypatch: pytest.MonkeyPatch):
+        # CI's check job alone passed, but the live end-to-end workflow never ran.
+        self._runs(monkeypatch, [r for r in ALL_GREEN if r["name"] == "check"])
+        with pytest.raises(SystemExit):
+            release.check_ci_green("abc")
+
     def test_review_bots_are_not_gates(self, monkeypatch: pytest.MonkeyPatch):
-        self._runs(
-            monkeypatch,
-            [
-                {
-                    "name": "check",
-                    "status": "completed",
-                    "conclusion": "success",
-                    "started_at": "1",
-                    "completed_at": "2",
-                },
-                {
-                    "name": "copilot-pull-request-reviewer",
-                    "status": "in_progress",
-                    "conclusion": None,
-                    "started_at": "3",
-                    "completed_at": None,
-                },
-            ],
-        )
+        bot = {
+            "name": "copilot-pull-request-reviewer",
+            "status": "in_progress",
+            "conclusion": None,
+            "started_at": "3",
+            "completed_at": None,
+        }
+        self._runs(monkeypatch, [*ALL_GREEN, bot])
         release.check_ci_green("abc")
 
     def test_latest_run_per_check_wins(self, monkeypatch: pytest.MonkeyPatch):
-        self._runs(
-            monkeypatch,
-            [
-                {
-                    "name": "check",
-                    "status": "completed",
-                    "conclusion": "failure",
-                    "started_at": "1",
-                    "completed_at": "2",
-                },
-                {
-                    "name": "check",
-                    "status": "completed",
-                    "conclusion": "success",
-                    "started_at": "3",
-                    "completed_at": "4",
-                },
-            ],
-        )
+        older_failure = {
+            "name": "check",
+            "status": "completed",
+            "conclusion": "failure",
+            "started_at": "0",
+            "completed_at": "0",
+        }
+        self._runs(monkeypatch, [older_failure, *ALL_GREEN])
         release.check_ci_green("abc")
 
     def test_red(self, monkeypatch: pytest.MonkeyPatch):
-        self._runs(
-            monkeypatch,
-            [{"name": "check", "status": "completed", "conclusion": "failure", "started_at": "1", "completed_at": "2"}],
-        )
+        red = [dict(r, conclusion="failure") if r["name"] == "check" else r for r in ALL_GREEN]
+        self._runs(monkeypatch, red)
         with pytest.raises(SystemExit):
             release.check_ci_green("abc")
 

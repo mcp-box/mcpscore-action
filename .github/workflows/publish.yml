@@ -47,7 +47,9 @@ jobs:
     steps:
       - name: Refuse anything but a stable release tag
         run: |
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+          # Strict SemVer numerics (no leading zeroes), matching scripts/release.py,
+          # so a tag like v01.2.3 cannot create a stray v01 major tag.
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
             echo "::error::'$RELEASE_TAG' is not a stable release tag (vX.Y.Z) — refusing to publish it"
             exit 1
           }
