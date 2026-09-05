@@ -217,9 +217,11 @@ a commit and `version` to a mcpscore release:
 | A `--smoke` check failed (CLI exit 4)                     | `::error::mcpscore --smoke: failed check(s) …`                                        | Yes               |
 | The server could not be audited (any other non-zero exit) | `::error::mcpscore could not audit <target> (exit N)`                                 | No                |
 
-Every gate publishes the comment, job summary, outputs, and JSON report
-first, then fails the job with the reason above. Only an audit that produced
-no report skips them.
+Every gate writes the JSON report, the step outputs, and the job summary
+first, then fails the job with the reason above. The comment is posted as
+well when the run is for a pull request, `comment` is on, and the token can
+write; it is best-effort and never changes the outcome. Only an audit that
+produced no report skips all of them.
 
 ## When it fails
 
