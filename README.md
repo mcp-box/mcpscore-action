@@ -19,7 +19,6 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     permissions:
-      contents: read         # a permissions block turns off every scope it omits
       pull-requests: write   # lets the action post its comment
     steps:
       - uses: mcp-box/mcpscore-action@v1
@@ -57,13 +56,19 @@ the audit is deterministic, so the same server scores the same on every run.
 
 Check out the code and point `target` at the entry file. Its runtime must be
 on the runner, so set up Python or Node first when the runner image lacks it.
+Checkout needs `contents: read`, which a job-level `permissions` block does
+not grant unless it is listed.
 
 ```yaml
-- uses: actions/checkout@v7
-- uses: mcp-box/mcpscore-action@v1
-  with:
-    target: ./server.py
-    min-score: 85
+permissions:
+  contents: read         # for actions/checkout
+  pull-requests: write
+steps:
+  - uses: actions/checkout@v7
+  - uses: mcp-box/mcpscore-action@v1
+    with:
+      target: ./server.py
+      min-score: 85
 ```
 
 ### An auth-gated server
@@ -127,7 +132,7 @@ after the report and comment are published. Use it on your own development
 and CI servers only. See [smoke mode](https://docs.mcpscore.dev/smoke-mode).
 
 ```yaml
-- uses: actions/checkout@v7
+- uses: actions/checkout@v7   # needs contents: read, as above
 - uses: mcp-box/mcpscore-action@v1
   with:
     target: ./server.py
@@ -227,10 +232,14 @@ no report skips them.
 - Cause: the workflow token is read-only. GitHub does this on pull requests
   from forks, and it happens when the job lacks `permissions: pull-requests: write`.
   Commenting is best-effort and never fails the gate.
-- Fix: add the permission. For fork PRs, the report is still in the job
-  summary. Commenting on fork PRs needs a `pull_request_target` workflow, and
-  its [security implications](https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/)
-  deserve a read first.
+- Fix: add the permission. For fork PRs, read the report in the job
+  summary instead. Do not switch the workflow to `pull_request_target` to get
+  the comment: that event runs with a write token in the base repository's
+  context, and checking out and running the fork's server there hands the
+  token to untrusted code, while leaving the default checkout audits the base
+  branch rather than the proposed change. The
+  [GitHub Security Lab write-up](https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/)
+  explains the trap.
 
 **The job passes, but the comment says the audit was partial**
 
