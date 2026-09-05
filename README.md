@@ -56,22 +56,24 @@ the audit is deterministic, so the same server scores the same on every run.
 
 Check out the code and point `target` at the entry file. Its runtime must be
 on the runner, so set up Python or Node first when the runner image lacks it.
-Checkout needs `contents: read`, which a job-level `permissions` block does
-not grant unless it is listed.
+This job runs the server code from the pull request, so give it no write
+scope: checkout needs `contents: read` and nothing else, and the report is in
+the job summary. Keep the commenting job, if you want one, on a remote
+target that the pull request cannot change.
 
 ```yaml
 jobs:
   audit:
     runs-on: ubuntu-latest
     permissions:
-      contents: read         # for actions/checkout
-      pull-requests: write
+      contents: read         # for actions/checkout; no write scope in a job that runs PR code
     steps:
       - uses: actions/checkout@v7
       - uses: mcp-box/mcpscore-action@v1
         with:
           target: ./server.py
           min-score: 85
+          comment: false     # read the job summary instead
 ```
 
 ### An auth-gated server
@@ -135,12 +137,13 @@ after the report and comment are published. Use it on your own development
 and CI servers only. See [smoke mode](https://docs.mcpscore.dev/smoke-mode).
 
 ```yaml
-- uses: actions/checkout@v7   # needs contents: read, as above
+- uses: actions/checkout@v7   # same job shape as the local server above
 - uses: mcp-box/mcpscore-action@v1
   with:
     target: ./server.py
     min-score: 80
     args: --smoke
+    comment: false
 ```
 
 ```text
