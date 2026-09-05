@@ -75,7 +75,7 @@ fail_on = "high"
 | Input           | Default                | Description                                             |
 |-----------------|------------------------|---------------------------------------------------------|
 | `target`        | — (required)           | MCP server URL, or local `.py`/`.js` path               |
-| `version`       | latest                 | mcpscore version to run (e.g. `1.9.0`)                  |
+| `version`       | latest                 | mcpscore version to run (e.g. `1.12.0`)                 |
 | `min-score`     | none                   | Fail if the main score % is below this (0–100)          |
 | `min-readiness` | none                   | Fail if the readiness % is below this (0–100)           |
 | `comment`       | `true`                 | Post/update a report comment on the PR                  |
