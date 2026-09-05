@@ -58,6 +58,15 @@ class TestChangelog:
             "[1.2.3]: https://github.com/mcp-box/mcpscore-action/compare/v1.2.2...v1.2.3"
         )
 
+    def test_first_release_notes_exclude_the_link_block(self, repo: Path):
+        (repo / "CHANGELOG.md").write_text(
+            "# Changelog\n\n## [1.0.0] - 2026-07-12\n\n### Added\n\n- First.\n\n"
+            "[1.0.0]: https://github.com/mcp-box/mcpscore-action/releases/tag/v1.0.0\n",
+            encoding="utf-8",
+        )
+
+        assert release.check_changelog("1.0.0") == "### Added\n\n- First."
+
     def test_first_release_links_its_tag(self):
         changelog = "## [1.0.0] - 2026-07-12\n\nFirst.\n"
 
@@ -153,6 +162,24 @@ class TestCiGreen:
         self._runs(monkeypatch, [r for r in ALL_GREEN if r["name"] == "check"])
         with pytest.raises(SystemExit):
             release.check_ci_green("abc")
+
+    @pytest.mark.parametrize("conclusion", ["skipped", "neutral"])
+    def test_a_skipped_required_check_did_not_run(self, monkeypatch: pytest.MonkeyPatch, conclusion: str):
+        runs = [dict(r, conclusion=conclusion) if r["name"] == "run-against-live-server" else r for r in ALL_GREEN]
+        self._runs(monkeypatch, runs)
+        with pytest.raises(SystemExit):
+            release.check_ci_green("abc")
+
+    def test_a_skipped_optional_check_is_fine(self, monkeypatch: pytest.MonkeyPatch):
+        optional = {
+            "name": "CodeQL",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "1",
+            "completed_at": "2",
+        }
+        self._runs(monkeypatch, [*ALL_GREEN, optional])
+        release.check_ci_green("abc")
 
     def test_review_bots_are_not_gates(self, monkeypatch: pytest.MonkeyPatch):
         bot = {

@@ -117,7 +117,22 @@ def check_changelog(version: str) -> str:
     if not re.search(rf"^{re.escape(expected)}$", changelog, flags=re.MULTILINE):
         fail(f"CHANGELOG.md is missing the compare link for {version}; expected exactly:\n  {expected}")
     ok(f"CHANGELOG has the [{version}] section and compare link")
-    return match.group(1).strip()
+    return release_notes(match.group(1))
+
+
+LINK_DEFINITION = re.compile(r"^\[[^\]]+\]:\s+\S+\s*$")
+"""A Markdown reference-link definition line, e.g. ``[1.1.0]: https://...``."""
+
+
+def release_notes(section: str) -> str:
+    """Turn a CHANGELOG section body into release notes.
+
+    The bottom section of the file (the first release, or the oldest one)
+    runs to end-of-file, so it also captures the reference-link block that
+    lives there. Those lines are file plumbing, not notes: drop them.
+    """
+    lines = [line for line in section.splitlines() if not LINK_DEFINITION.match(line)]
+    return "\n".join(lines).strip()
 
 
 def expected_compare_link(changelog: str, version: str) -> str:
@@ -157,9 +172,11 @@ REVIEW_BOT_CHECKS = frozenset({"copilot-pull-request-reviewer", "Cursor Bugbot"}
 """Check runs registered by code-review bots: reviews, not CI gates."""
 
 REQUIRED_CHECKS = frozenset({"check", "run-against-live-server", "gate-passes-and-fails"})
-"""The job names that must have run on HEAD: CI's check job (ci.yml) and both
-jobs of the live end-to-end workflow (test-action.yml). A green subset is not
-a green release: a missing live run means the action was never exercised."""
+"""The job names that must have run and passed on HEAD: CI's check job
+(ci.yml) and both jobs of the live end-to-end workflow (test-action.yml). A
+green subset is not a green release: a missing or skipped live run means the
+action was never exercised, so for these only ``success`` counts. Other
+checks may be skipped or neutral."""
 
 
 def check_ci_green(sha: str) -> None:
@@ -184,11 +201,15 @@ def check_ci_green(sha: str) -> None:
     missing = sorted(REQUIRED_CHECKS - set(latest_runs))
     if missing:
         fail(f"required CI checks have not run on HEAD: {', '.join(missing)}")
-    bad = [r for r in runs if r["status"] != "completed" or r["conclusion"] not in ("success", "skipped", "neutral")]
+    bad = [r for r in runs if r["status"] != "completed" or r["conclusion"] not in _green_conclusions(r["name"])]
     if bad:
         details = ", ".join(f"{r['name']}: {r['conclusion'] or r['status']}" for r in bad)
         fail(f"CI is not green for HEAD — {details}")
     ok(f"CI green for HEAD ({len(runs)} checks)")
+
+
+def _green_conclusions(check_name: str) -> tuple[str, ...]:
+    return ("success",) if check_name in REQUIRED_CHECKS else ("success", "skipped", "neutral")
 
 
 def create_release(version: str, notes: str, target: str) -> None:
