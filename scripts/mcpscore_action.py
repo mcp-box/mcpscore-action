@@ -103,6 +103,31 @@ def _failed_rules_section(report: dict) -> str:
     return f"<details><summary>{len(failed)} failed check(s)</summary>\n\n{items}\n\n</details>"
 
 
+def _config_lines(report: dict) -> list[str]:
+    """Markdown lines describing an applied ``mcpscore.toml`` (the report's ``config`` block), or none.
+
+    A configured score is the score under the repository's own policy; the
+    comment says so, and which rules the gate tripped on, so nobody reads the
+    number as the canonical one the badge shows.
+    """
+    block = report.get("config")
+    if not block:
+        return []
+    off, reranked = len(block.get("disabled", [])), len(block.get("reranked", {}))
+    parts = [f"{off} rule{'s' if off != 1 else ''} off"] if off else []
+    if reranked:
+        parts.append(f"{reranked} re-ranked")
+    gate = block.get("gate")
+    if gate:
+        parts.append(f"gate at {gate['fail_on']}")
+    lines = [f"**Config:** `{block.get('source', 'mcpscore.toml')}` — {', '.join(parts) if parts else 'no overrides'}"]
+    if gate and gate.get("failed"):
+        failed = ", ".join(f"`{rule_id}`" for rule_id in gate["failed"])
+        lines.append(f"**Gate failed:** {len(gate['failed'])} rule(s) at or above {gate['fail_on']}: {failed}")
+    lines.append("")
+    return lines
+
+
 def build_report_markdown(report: dict) -> str:
     """Render the human-readable report body (shared by the PR comment and job summary)."""
     score = report["score"]
@@ -117,6 +142,7 @@ def build_report_markdown(report: dict) -> str:
         f"**Target:** `{report.get('target', '?')}`  ·  "
         f"**Spec:** {spec.get('negotiated_version', 'unknown')} ({spec.get('era', 'unknown')})",
         "",
+        *_config_lines(report),
         _severity_table(report),
         "",
     ]
@@ -138,6 +164,27 @@ def build_report_markdown(report: dict) -> str:
         f"[docs](https://docs.mcpscore.dev) · [methodology](https://docs.mcpscore.dev/methodology)</sub>"
     )
     return "\n".join(lines)
+
+
+# Exit codes that mean the audit completed and a gate the CLI itself enforces
+# failed: 3 for --fail-under / --fail-under-readiness / a configured [gate],
+# 4 for a --smoke check. The report is still on stdout and must still be
+# published; the job fails afterwards with the reason.
+CLI_GATE_EXIT_CODES = (3, 4)
+
+
+def cli_gate_failures(report: dict, code: int) -> list[str]:
+    """Explain a CLI gate exit (3 or 4) from the report, so the job's error names the rules."""
+    if code == 3:
+        gate = (report.get("config") or {}).get("gate") or {}
+        if gate.get("failed"):
+            return [f"mcpscore [gate] fail_on = {gate['fail_on']}: failed rule(s) {', '.join(gate['failed'])}"]
+        return ["mcpscore exited 3: a --fail-under gate passed through `args` was not met"]
+    if code == 4:
+        checks = (report.get("smoke") or {}).get("checks") or []
+        failed = [c.get("check_id", "?") for c in checks if c.get("verdict") == "fail"]
+        return [f"mcpscore --smoke: failed check(s) {', '.join(failed) if failed else '(see the report)'}"]
+    return []
 
 
 def build_comment(report: dict) -> str:
@@ -243,7 +290,7 @@ def main() -> int:
     extra_args = env("args").split()
     code, stdout, stderr = run_audit(target, version, extra_args)
 
-    if code != 0 or not stdout.strip():
+    if not stdout.strip() or (code != 0 and code not in CLI_GATE_EXIT_CODES):
         print(f"::error::mcpscore could not audit {target} (exit {code})")
         sys.stderr.write(stderr)
         return 1
@@ -266,7 +313,7 @@ def main() -> int:
     pct = percentage(report["score"], report["max_score"])
     print(f"mcpscore: {report['score']}/{report['max_score']} ({pct}%), era {report.get('spec', {}).get('era')}")
 
-    failures = evaluate_gate(report, env("min-score"), env("min-readiness"))
+    failures = evaluate_gate(report, env("min-score"), env("min-readiness")) + cli_gate_failures(report, code)
     for reason in failures:
         print(f"::error::{reason}")
     return 1 if failures else 0

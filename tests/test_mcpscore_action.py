@@ -159,3 +159,95 @@ class TestEnv:
     def test_default_when_unset(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.delenv("INPUT_COMMENT", raising=False)
         assert action.env("comment", "true") == "true"
+
+
+def make_configured_report(gate_failed: list[str] | None = None) -> dict:
+    report = make_report()
+    report["config"] = {
+        "source": "mcpscore.toml",
+        "sha256": "abc",
+        "disabled": ["server_websiteurl_present", "server_icons_present"],
+        "reranked": {"server_title_present": {"from": "MEDIUM", "to": "CRITICAL"}},
+        "unknown": [],
+    }
+    if gate_failed is not None:
+        report["config"]["gate"] = {"fail_on": "CRITICAL", "failed": gate_failed}
+    return report
+
+
+class TestConfiguredRuns:
+    def test_markdown_names_the_config_and_what_it_changed(self):
+        body = action.build_report_markdown(make_configured_report())
+
+        assert "**Config:** `mcpscore.toml` — 2 rules off, 1 re-ranked" in body
+        assert "Gate failed" not in body
+
+    def test_markdown_lists_the_rules_that_tripped_the_gate(self):
+        body = action.build_report_markdown(make_configured_report(gate_failed=["server_title_present"]))
+
+        assert "gate at CRITICAL" in body
+        assert "**Gate failed:** 1 rule(s) at or above CRITICAL: `server_title_present`" in body
+
+    def test_markdown_without_config_is_unchanged(self):
+        assert "Config:" not in action.build_report_markdown(make_report())
+
+    def test_cli_gate_exit_3_is_explained_from_the_config_block(self):
+        report = make_configured_report(gate_failed=["a", "b"])
+
+        assert action.cli_gate_failures(report, 3) == ["mcpscore [gate] fail_on = CRITICAL: failed rule(s) a, b"]
+
+    def test_cli_gate_exit_3_without_a_config_gate_blames_args(self):
+        assert action.cli_gate_failures(make_report(), 3) == [
+            "mcpscore exited 3: a --fail-under gate passed through `args` was not met"
+        ]
+
+    def test_cli_gate_exit_4_lists_failed_smoke_checks(self):
+        report = make_report()
+        report["smoke"] = {
+            "checks": [{"check_id": "smoke_unknown_tool", "verdict": "fail"}, {"check_id": "x", "verdict": "pass"}]
+        }
+
+        assert action.cli_gate_failures(report, 4) == ["mcpscore --smoke: failed check(s) smoke_unknown_tool"]
+
+    def test_clean_exit_has_no_cli_gate_failures(self):
+        assert action.cli_gate_failures(make_report(), 0) == []
+
+
+class TestMainWithCliGates:
+    """A CLI gate exit still publishes the report, then fails the job with the reason."""
+
+    def _run(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, code: int, stdout: str
+    ) -> tuple[int, list[str], bool]:
+        printed: list[str] = []
+        commented = {"called": False}
+        monkeypatch.setenv("INPUT_TARGET", "https://server.example/mcp")
+        monkeypatch.setenv("INPUT_REPORT_PATH", str(tmp_path / "report.json"))
+        monkeypatch.setenv("INPUT_COMMENT", "true")
+        monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+        monkeypatch.setattr(action, "run_audit", lambda *a: (code, stdout, ""))
+        monkeypatch.setattr(action, "post_or_update_comment", lambda *a: commented.__setitem__("called", True))
+        monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(str(x) for x in a)))
+        return action.main(), printed, commented["called"]
+
+    def test_config_gate_failure_publishes_the_report_and_fails_with_the_rules(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ):
+        report = make_configured_report(gate_failed=["server_title_present"])
+
+        code, printed, commented = self._run(monkeypatch, tmp_path, 3, json.dumps(report))
+
+        assert code == 1
+        assert (tmp_path / "report.json").exists()
+        assert commented is True
+        assert any(
+            "::error::mcpscore [gate] fail_on = CRITICAL: failed rule(s) server_title_present" in p for p in printed
+        )
+
+    def test_a_real_failure_still_reports_could_not_audit(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        code, printed, commented = self._run(monkeypatch, tmp_path, 2, "")
+
+        assert code == 1
+        assert commented is False
+        assert any("could not audit" in p for p in printed)
