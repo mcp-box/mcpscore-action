@@ -1,0 +1,79 @@
+name: Publish
+
+# A GitHub Action is "published" by moving the floating major tag: every
+# workflow that says `uses: mcp-box/mcpscore-action@v1` runs whatever v1
+# points at, and the Marketplace lists the repository's GitHub Releases. So
+# the release flow is: scripts/release.py creates the GitHub Release on
+# tag vX.Y.Z (after its preflight checks), and this workflow, triggered by
+# that release, moves vX to the same commit. The move happens here rather
+# than on a laptop so it is auditable in the Actions log and needs no
+# force-push rights outside CI.
+#
+# Also runnable by hand with an explicit tag, e.g. to re-point v1 after a
+# release was created some other way. Only the latest stable release may
+# move the tag: a dispatch of an older tag must not move v1 backward.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Stable release tag to publish (e.g. v1.1.0)"
+        required: true
+        type: string
+
+permissions: {}
+
+# One publisher at a time: two releases in quick succession must not race and
+# leave the major tag on the older one. A running publish finishes; the
+# queued one then re-checks what "latest" is.
+concurrency:
+  group: publish-major-tag
+  cancel-in-progress: false
+
+jobs:
+  move-major-tag:
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      # A release run carries its tag; a manual run must name one explicitly —
+      # github.ref is deliberately NOT a fallback, because a dispatch from a
+      # branch would otherwise publish an unreleased commit.
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Refuse anything but a stable release tag
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "::error::'$RELEASE_TAG' is not a stable release tag (vX.Y.Z) — refusing to publish it"
+            exit 1
+          }
+      - name: Refuse anything but the latest stable release
+        run: |
+          LATEST="$(gh api "repos/$REPO/releases/latest" --jq .tag_name)"
+          [[ "$RELEASE_TAG" == "$LATEST" ]] || {
+            echo "::error::'$RELEASE_TAG' is not the latest stable release ('$LATEST') — refusing to move the major tag backward"
+            exit 1
+          }
+      # persist-credentials stays on deliberately: this job's entire purpose
+      # is the authenticated tag push below, and nothing after checkout uploads
+      # artifacts that could leak the persisted token.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1  # zizmor: ignore[artipacked]
+        with:
+          # refs/tags/ pins the checkout to the tag namespace: a branch that
+          # happens to share the name cannot be substituted.
+          ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
+          fetch-depth: 0
+      - name: Move the major tag to this release
+        run: |
+          MAJOR="${RELEASE_TAG%%.*}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Force: the major tag is a floating pointer owned by this workflow,
+          # never a place where commits originate — rewriting it is the contract.
+          git tag -f "$MAJOR" "refs/tags/$RELEASE_TAG"
+          git push origin "refs/tags/$MAJOR" --force
+          echo "$MAJOR -> $RELEASE_TAG ($(git rev-parse --short "refs/tags/$RELEASE_TAG"))"
