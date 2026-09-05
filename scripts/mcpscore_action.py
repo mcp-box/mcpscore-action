@@ -31,6 +31,18 @@ def env(name: str, default: str = "") -> str:
     return os.environ.get(f"INPUT_{name.upper().replace('-', '_')}", default).strip()
 
 
+# Inputs this action adds to its own step environment that the audited server
+# must never see. A local target is code from the pull request under review,
+# and mcpscore launches it as a child process that inherits the environment;
+# the comment token would otherwise be readable by that code.
+SECRET_INPUTS = frozenset({"INPUT_GITHUB_TOKEN"})
+
+
+def audit_env() -> dict[str, str]:
+    """The environment for the mcpscore subprocess: the step's, minus this action's own secrets."""
+    return {name: value for name, value in os.environ.items() if name not in SECRET_INPUTS}
+
+
 def run_audit(target: str, version: str, extra_args: list[str]) -> tuple[int, str, str]:
     """Run ``uvx mcpscore[@version] <target> --json`` and capture its output.
 
@@ -42,7 +54,7 @@ def run_audit(target: str, version: str, extra_args: list[str]) -> tuple[int, st
     """
     spec = f"mcpscore@{version}" if version else "mcpscore"
     cmd = ["uvx", spec, target, "--json", *extra_args]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False, env=audit_env())
     return result.returncode, result.stdout, result.stderr
 
 
@@ -154,10 +166,17 @@ def build_report_markdown(report: dict) -> str:
     readiness_max = readiness.get("max_score", 0)
     if readiness_max > 0:
         readiness_pct = percentage(readiness.get("score", 0), readiness_max)
+        # Since mcpscore 1.1.0 a server on the modern lifecycle has these points
+        # counted in score/max_score; the report says which (older engines
+        # never counted them, so a missing key reads as not counted).
+        counted = (
+            "counted in the main score"
+            if readiness.get("counted_in_main")
+            else "informative, not counted in the main score"
+        )
         lines.append(
             f"**Readiness for MCP {spec.get('readiness_target', '')}:** "
-            f"{readiness.get('score', 0)}/{readiness_max} ({readiness_pct}%) "
-            f"— informative, not part of the main score."
+            f"{readiness.get('score', 0)}/{readiness_max} ({readiness_pct}%) — {counted}."
         )
         lines.append("")
 

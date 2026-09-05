@@ -92,6 +92,20 @@ class TestMarkdown:
         assert "Readiness for MCP 2026-07-28" in md
         assert "3/13" in md
 
+    def test_readiness_line_says_counted_for_a_modern_lifecycle_server(self):
+        report = make_report(readiness=3, readiness_max=13)
+        report["readiness"]["counted_in_main"] = True
+        md = action.build_report_markdown(report)
+        assert "3/13 (23%) — counted in the main score." in md
+
+    def test_readiness_line_says_informative_when_not_counted(self):
+        report = make_report(readiness=3, readiness_max=13)
+        report["readiness"]["counted_in_main"] = False
+        assert "informative, not counted in the main score." in action.build_report_markdown(report)
+        # An engine older than the key never counted readiness: same wording.
+        report["readiness"].pop("counted_in_main")
+        assert "informative, not counted in the main score." in action.build_report_markdown(report)
+
     def test_readiness_line_absent_when_not_assessed(self):
         md = action.build_report_markdown(make_report(readiness=0, readiness_max=0))
         assert "Readiness for MCP" not in md
@@ -287,3 +301,38 @@ class TestPartialConfigBlocks:
         report["config"]["gate"] = {"fail_on": "HIGH"}
 
         assert "Gate failed" not in action.build_report_markdown(report)
+
+
+class TestAuditEnvironment:
+    FAKE_TOKEN = "ghs_not_a_real_token"  # noqa: S105
+    USER_CREDENTIAL = "user-supplied-credential"
+
+    def test_the_comment_token_is_stripped_from_the_audit_subprocess(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("INPUT_GITHUB_TOKEN", self.FAKE_TOKEN)
+        monkeypatch.setenv("MCPSCORE_TOKEN", self.USER_CREDENTIAL)
+        monkeypatch.setenv("INPUT_TARGET", "./server.py")
+        seen: dict = {}
+
+        def fake_run(cmd, **kwargs):
+            seen["cmd"] = cmd
+            seen["env"] = kwargs["env"]
+
+            class Result:
+                returncode = 0
+                stdout = "{}"
+                stderr = ""
+
+            return Result()
+
+        monkeypatch.setattr(action.subprocess, "run", fake_run)
+
+        action.run_audit("./server.py", "", [])
+
+        assert "INPUT_GITHUB_TOKEN" not in seen["env"]
+        assert self.FAKE_TOKEN not in seen["env"].values()
+        # Everything else the step had is still there: the user's own secrets are
+        # theirs to pass, and PATH is what finds uvx.
+        assert seen["env"]["MCPSCORE_TOKEN"] == self.USER_CREDENTIAL
+        assert seen["env"]["INPUT_TARGET"] == "./server.py"
+        assert "PATH" in seen["env"]
+        assert seen["cmd"][:2] == ["uvx", "mcpscore"]

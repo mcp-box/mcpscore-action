@@ -9,6 +9,21 @@ release in the 1.x line moves; `@v1.1.0` pins one release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The comment token no longer reaches the audited server.** The audit
+  subprocess inherited the step environment, including the `github-token`
+  input, so a local target (server code from the pull request under review)
+  could read a write-capable token. The action now strips its own token from
+  the environment it launches mcpscore with. Secrets you export yourself,
+  such as `MCPSCORE_TOKEN`, are still passed through on purpose.
+- **The readiness line in the comment no longer claims readiness is never
+  part of the main score.** Since mcpscore 1.1.0 a server on the modern
+  lifecycle has its readiness points counted in the score, and the report
+  says so (`readiness.counted_in_main`). The comment and job summary now
+  read "counted in the main score" or "informative, not counted in the main
+  score" accordingly.
+
 ## [1.1.0] - 2026-09-05
 
 ### Added
