@@ -19,6 +19,7 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     permissions:
+      contents: read         # a permissions block turns off every scope it omits
       pull-requests: write   # lets the action post its comment
     steps:
       - uses: mcp-box/mcpscore-action@v1
@@ -204,7 +205,7 @@ a commit and `version` to a mcpscore release:
 |-----------------------------------------------------------|---------------------------------------------------------------------------------------|-------------------|
 | Score under `min-score` or `min-readiness`                | `::error::score 70/91 (77%) is below the required 80%`                                | Yes               |
 | A configured `[gate]` tripped (CLI exit 3)                | `::error::mcpscore [gate] fail_on = HIGH: failed rule(s) …`                           | Yes               |
-| `--fail-under` passed through `args` not met (CLI exit 3) | `::error::mcpscore exited 3: a --fail-under gate passed through \`args\` was not met` | Yes               |
+| `--fail-under` passed through `args` not met (CLI exit 3) | ``::error::mcpscore exited 3: a --fail-under gate passed through `args` was not met`` | Yes               |
 | A `--smoke` check failed (CLI exit 4)                     | `::error::mcpscore --smoke: failed check(s) …`                                        | Yes               |
 | The server could not be audited (any other non-zero exit) | `::error::mcpscore could not audit <target> (exit N)`                                 | No                |
 
