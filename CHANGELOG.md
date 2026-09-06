@@ -9,6 +9,8 @@ release in the 1.x line moves; `@v1.1.0` pins one release.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-09-06
+
 ### Fixed
 
 - **The comment token no longer reaches the audited server.** The audit
@@ -66,7 +68,8 @@ release in the 1.x line moves; `@v1.1.0` pins one release.
   that updates in place, expose every score as a step output, and write the
   JSON report to the run.
 
-[Unreleased]: https://github.com/mcp-box/mcpscore-action/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/mcp-box/mcpscore-action/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/mcp-box/mcpscore-action/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/mcp-box/mcpscore-action/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/mcp-box/mcpscore-action/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/mcp-box/mcpscore-action/releases/tag/v1.0.0
