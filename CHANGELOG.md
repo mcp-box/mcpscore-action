@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Users reference the action by its floating major tag (`@v1`), which every
-release in the 1.x line moves; `@v1.1.0` pins one release.
+release in the 1.x line moves; `@v1.1.1` pins one release.
 
 ## [Unreleased]
 
@@ -25,6 +25,11 @@ release in the 1.x line moves; `@v1.1.0` pins one release.
   says so (`readiness.counted_in_main`). The comment and job summary now
   read "counted in the main score" or "informative, not counted in the main
   score" accordingly.
+
+### Changed
+
+- The audit runs with `PYTHONFAULTHANDLER=1`, so a native crash in the CLI
+  prints a traceback in the job log instead of a bare exit code.
 
 ## [1.1.0] - 2026-09-05
 

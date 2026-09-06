@@ -75,6 +75,9 @@ runs:
       shell: bash
       run: python3 "$GITHUB_ACTION_PATH/scripts/mcpscore_action.py"
       env:
+        # A native crash in the CLI (seen twice as a bare exit 139 in CI)
+        # then prints a traceback instead of nothing. Inherited by mcpscore.
+        PYTHONFAULTHANDLER: "1"
         INPUT_TARGET: ${{ inputs.target }}
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_MIN_SCORE: ${{ inputs.min-score }}
