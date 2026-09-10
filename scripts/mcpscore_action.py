@@ -327,6 +327,17 @@ def main() -> int:
         # silently redirect the file away from the path the upload step reads.
         print("::error::'sarif-path' and a `--sarif` in `args` name two files; keep one (prefer the input)")
         return 1
+    report_path = Path(env("report-path", "mcpscore-report.json"))
+    if sarif_path and Path(sarif_path).resolve() == report_path.resolve():
+        # The CLI writes the SARIF first and this action writes the JSON report
+        # after; one path for both would leave plain JSON where the upload looks.
+        print("::error::'sarif-path' and 'report-path' name the same file; give the SARIF its own path")
+        return 1
+    if sarif_path:
+        # The CLI writes the file only after an audit completes. Without this,
+        # a connection failure would leave an earlier step's file in place and
+        # an upload guarded by hashFiles() would ship stale findings as new.
+        Path(sarif_path).unlink(missing_ok=True)
     code, stdout, stderr = run_audit(target, version, extra_args, sarif_path)
 
     if not stdout.strip() or (code != 0 and code not in CLI_GATE_EXIT_CODES):
@@ -346,7 +357,6 @@ def main() -> int:
         sys.stderr.write(stdout)
         return 1
 
-    report_path = Path(env("report-path", "mcpscore-report.json"))
     report_path.write_text(stdout, encoding="utf-8")
     set_outputs(report)
     write_job_summary(report)

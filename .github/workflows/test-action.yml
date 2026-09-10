@@ -72,19 +72,24 @@ jobs:
           version: "1.14.0"
           sarif-path: mcpscore.sarif
           comment: "false"
-      - name: Assert the SARIF file exists and carries findings for the target
+      - name: Assert the SARIF file carries exactly this run's failed rules
+        # Independent of DeepWiki's score: the JSON report says which rules
+        # failed in this very run, and the SARIF must list those and no others.
         shell: bash
         run: |
           test -f mcpscore.sarif
           python3 - <<'PY'
           import json
+          report = json.load(open("mcpscore-report.json", encoding="utf-8"))
+          failed = {r["rule_id"] for r in report["results"] if not r["passed"]}
+          failed |= {r["rule_id"] for r in report.get("readiness", {}).get("results", []) if not r["passed"]}
           run = json.load(open("mcpscore.sarif", encoding="utf-8"))["runs"][0]
           assert run["tool"]["driver"]["name"] == "mcpscore", run["tool"]
-          assert run["results"], "no results: DeepWiki has failed rules, the file should carry them"
+          assert {r["ruleId"] for r in run["results"]} == failed, (failed, run["results"])
           for result in run["results"]:
               assert result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == "mcp.deepwiki.com/mcp"
               assert "primaryLocationLineHash" in result["partialFingerprints"]
-          print(f"{len(run['results'])} findings, all located on mcp.deepwiki.com/mcp")
+          print(f"{len(run['results'])} findings in the SARIF, matching the report's failed rules")
           PY
 
   gate-passes-and-fails:

@@ -372,6 +372,39 @@ class TestSarifPath:
         assert action.main() == 0
         assert calls == [("https://server.example/mcp", "", ["--sarif=x.sarif"], "")]
 
+    @pytest.mark.parametrize("alias", ["out/report.json", "./out/report.json", "out/../out/report.json"])
+    def test_sarif_path_may_not_alias_report_path(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, alias: str):
+        # The JSON report is written after the SARIF; one path for both leaves plain JSON for the upload.
+        printed: list[str] = []
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("INPUT_TARGET", "https://server.example/mcp")
+        monkeypatch.setenv("INPUT_REPORT_PATH", "out/report.json")
+        monkeypatch.setenv("INPUT_SARIF_PATH", alias)
+        monkeypatch.setattr(action, "run_audit", lambda *a: pytest.fail("the CLI must not run"))
+        monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(str(x) for x in a)))
+        assert action.main() == 1
+        assert any("name the same file" in p for p in printed)
+
+    def test_a_stale_sarif_file_is_removed_before_the_audit(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        # The CLI writes the file only after an audit completes; a connection
+        # failure must not leave an earlier step's findings for hashFiles() to upload.
+        stale = tmp_path / "findings.sarif"
+        stale.write_text("{}", encoding="utf-8")
+        monkeypatch.setenv("INPUT_TARGET", "https://server.example/mcp")
+        monkeypatch.setenv("INPUT_SARIF_PATH", str(stale))
+        monkeypatch.setenv("INPUT_REPORT_PATH", str(tmp_path / "report.json"))
+        seen: dict[str, bool] = {}
+
+        def failing_audit(*args):
+            seen["file_gone_before_audit"] = not stale.exists()
+            return 2, "", "connection refused"
+
+        monkeypatch.setattr(action, "run_audit", failing_audit)
+        monkeypatch.setattr("builtins.print", lambda *a, **k: None)
+        assert action.main() == 1
+        assert seen == {"file_gone_before_audit": True}
+        assert not stale.exists()
+
     def test_an_engine_without_the_flag_names_the_version_needed(self, monkeypatch: pytest.MonkeyPatch):
         printed: list[str] = []
         monkeypatch.setenv("INPUT_TARGET", "https://server.example/mcp")
