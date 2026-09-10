@@ -9,6 +9,17 @@ release in the 1.x line moves; `@v1.1.1` pins one release.
 
 ## [Unreleased]
 
+### Added
+
+- **`sarif-path` input: the failed rules as SARIF 2.1.0 for GitHub code
+  scanning.** Set it to a file and add a `github/codeql-action/upload-sarif`
+  step, and every failed rule becomes an alert in the repository's Security
+  tab, keyed on the rule and the target so a re-run updates it in place. The
+  file is written before any gate runs, so a failing build still carries its
+  findings. Needs mcpscore 1.14.0 or later (the default, latest, qualifies);
+  an older `version` fails the job with a message naming the requirement.
+  The README has the workflow.
+
 ## [1.1.1] - 2026-09-06
 
 ### Fixed

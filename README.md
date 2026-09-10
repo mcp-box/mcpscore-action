@@ -47,6 +47,8 @@ the audit is deterministic, so the same server scores the same on every run.
 - **The same report in the job summary**, which needs no token at all.
 - **The JSON report** written to `report-path`, ready to upload as an
   artifact or diff between runs.
+- **Optionally, the findings as SARIF** at `sarif-path`, for GitHub code
+  scanning: [send findings to code scanning](#send-findings-to-code-scanning).
 - **Every number as a step output**: score, maximum, percentage, the
   readiness trio, era, and negotiated version.
 
@@ -150,6 +152,47 @@ and CI servers only. See [smoke mode](https://docs.mcpscore.dev/smoke-mode).
 ::error::mcpscore --smoke: failed check(s) smoke_structured_content
 ```
 
+### Send findings to code scanning
+
+Set `sarif-path` and upload the file. Every failed rule becomes an alert in
+the repository's Security tab, alongside the findings of your other scanners,
+keyed on the rule and the target so a re-run updates it in place. The upload
+needs `security-events: write`, and in a private repository `contents: read`
+as well; the audit itself needs nothing more than before. Needs mcpscore
+1.14.0 or later, which the default `version` (latest) satisfies.
+
+```yaml
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      security-events: write   # lets upload-sarif create the alerts
+      contents: read           # upload-sarif needs it in a private repository
+    steps:
+      - uses: mcp-box/mcpscore-action@v1
+        with:
+          target: https://your-server.example/mcp
+          min-score: 80
+          sarif-path: mcpscore.sarif
+      - uses: github/codeql-action/upload-sarif@v4
+        # A failed gate still wrote the file; a connection failure did not.
+        if: ${{ !cancelled() && hashFiles('mcpscore.sarif') != '' }}
+        with:
+          sarif_file: mcpscore.sarif
+```
+
+The file is written before the score gate runs, so a failing build still
+carries its findings. `upload-sarif` files them under a category per workflow
+and job, and allows one upload per job for a given tool and category: to
+audit two servers in one job, give each upload step its own `category:`
+input, or the second upload is rejected. The findings are about the running server, not a line of
+source, so they appear in the Security tab rather than as annotations in the
+pull request diff; `min-score` is what fails the pull request. The file shows
+a URL target's scheme, host, port, and path and nothing else of it, and a
+command's program name only. Details of the format are in the
+[CLI reference](https://docs.mcpscore.dev/cli#sarif-for-github-code-scanning).
+
 ### Also require readiness for MCP 2026-07-28
 
 ```yaml
@@ -190,16 +233,17 @@ a commit and `version` to a mcpscore release:
 
 ## Inputs
 
-| Input           | Default                | What it does                                                                                                                        |
-|-----------------|------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
-| `target`        | required               | Server URL (Streamable HTTP or SSE), or a local `.py` or `.js` path                                                                 |
-| `min-score`     | no gate                | Fail the job when the main score percentage (0–100) is below this. With a `mcpscore.toml` in the repo, that is the configured score |
-| `min-readiness` | no gate                | Fail the job when the readiness percentage (0–100) is below this. Skipped when readiness was not assessed                           |
-| `comment`       | `true`                 | Post or update the report comment on the pull request                                                                               |
-| `args`          | —                      | Extra arguments passed to the mcpscore CLI, split on whitespace. Write each as one token, for example `--header=X-Api-Key:$KEY`     |
-| `version`       | latest                 | mcpscore release to run, for example `1.12.0`                                                                                       |
-| `report-path`   | `mcpscore-report.json` | Where the JSON report is written                                                                                                    |
-| `github-token`  | `github.token`         | Token for the comment. Needs `pull-requests: write`                                                                                 |
+| Input           | Default                | What it does                                                                                                                                                                                         |
+|-----------------|------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `target`        | required               | Server URL (Streamable HTTP or SSE), or a local `.py` or `.js` path                                                                                                                                  |
+| `min-score`     | no gate                | Fail the job when the main score percentage (0–100) is below this. With a `mcpscore.toml` in the repo, that is the configured score                                                                  |
+| `min-readiness` | no gate                | Fail the job when the readiness percentage (0–100) is below this. Skipped when readiness was not assessed                                                                                            |
+| `comment`       | `true`                 | Post or update the report comment on the pull request                                                                                                                                                |
+| `args`          | —                      | Extra arguments passed to the mcpscore CLI, split on whitespace. Write each as one token, for example `--header=X-Api-Key:$KEY`                                                                      |
+| `version`       | latest                 | mcpscore release to run, for example `1.12.0`                                                                                                                                                        |
+| `report-path`   | `mcpscore-report.json` | Where the JSON report is written                                                                                                                                                                     |
+| `sarif-path`    | off                    | Also write the failed rules as SARIF 2.1.0 here, for `github/codeql-action/upload-sarif`. Needs mcpscore 1.14.0 or later. Its own file, not `report-path`; do not also pass `--sarif` through `args` |
+| `github-token`  | `github.token`         | Token for the comment. Needs `pull-requests: write`                                                                                                                                                  |
 
 ## Outputs
 
@@ -256,6 +300,11 @@ produced no report skips all of them.
   posture scores high on a handful of checks.
 - Fix: export `MCPSCORE_TOKEN` from a secret, as above, so the gate judges the
   full audit.
+
+**`sarif-path` fails with `'sarif-path' needs mcpscore 1.14.0 or later`**
+
+- Cause: the `version` input pins an mcpscore release without `--sarif`.
+- Fix: set `version` to `1.14.0` or later, or leave it empty for the latest.
 
 **A local target fails with `Server script not found`**
 

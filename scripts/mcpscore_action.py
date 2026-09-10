@@ -22,6 +22,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+SARIF_MIN_VERSION = "1.14.0"
+"""First mcpscore release with ``--sarif``; an older engine rejects the flag as a usage error (exit 1)."""
+
 COMMENT_MARKER = "<!-- mcpscore-action -->"
 """Hidden marker that lets the action find and update its own PR comment."""
 
@@ -43,19 +46,34 @@ def audit_env() -> dict[str, str]:
     return {name: value for name, value in os.environ.items() if name not in SECRET_INPUTS}
 
 
-def run_audit(target: str, version: str, extra_args: list[str]) -> tuple[int, str, str]:
-    """Run ``uvx mcpscore[@version] <target> --json`` and capture its output.
+def run_audit(target: str, version: str, extra_args: list[str], sarif_path: str = "") -> tuple[int, str, str]:
+    """Run ``uvx mcpscore[@version] <target> --json [--sarif <path>]`` and capture its output.
 
     Returns:
         (exit_code, stdout, stderr). mcpscore writes the JSON report to stdout
         and logs to stderr; a non-zero exit means it could not audit (e.g.
-        connection failure, exit code 2).
+        connection failure, exit code 2). With ``sarif_path``, the CLI writes
+        the SARIF file itself, before its gates run.
 
     """
     spec = f"mcpscore@{version}" if version else "mcpscore"
-    cmd = ["uvx", spec, target, "--json", *extra_args]
+    # Bound as one token: a path that begins with `-` would otherwise be read
+    # as another option instead of as the value.
+    cmd = ["uvx", spec, target, "--json", *([f"--sarif={sarif_path}"] if sarif_path else []), *extra_args]
     result = subprocess.run(cmd, capture_output=True, text=True, check=False, env=audit_env())
     return result.returncode, result.stdout, result.stderr
+
+
+def _names_sarif_option(arg: str) -> bool:
+    """Whether a CLI argument is ``--sarif``, ``--sarif=…``, or an unambiguous abbreviation argparse accepts.
+
+    argparse matches option prefixes, so ``--sa=x`` already sets ``--sarif``:
+    no other mcpscore option begins with ``--sa`` (``--stdio`` and ``--smoke``
+    make ``--s`` ambiguous, and the CLI rejects that itself). Anything from
+    ``--sa`` up is an alias for this purpose.
+    """
+    name = arg.split("=", 1)[0]
+    return len(name) >= len("--sa") and "--sarif".startswith(name)
 
 
 def percentage(score: int, max_score: int) -> int:
@@ -312,10 +330,43 @@ def main() -> int:
 
     version = env("version")
     extra_args = env("args").split()
-    code, stdout, stderr = run_audit(target, version, extra_args)
+    sarif_path = env("sarif-path")
+    if sarif_path == "-":
+        # stdout carries the JSON report this action parses; the CLI refuses
+        # the combination too, but the message here names the input.
+        print("::error::'sarif-path' must be a file path, not '-' (stdout carries the JSON report)")
+        return 1
+    if sarif_path and any(_names_sarif_option(arg) for arg in extra_args):
+        # argparse keeps the last occurrence, so a `--sarif` in `args` would
+        # silently redirect the file away from the path the upload step reads.
+        print("::error::'sarif-path' and a `--sarif` in `args` name two files; keep one (prefer the input)")
+        return 1
+    report_path = Path(env("report-path", "mcpscore-report.json"))
+    if sarif_path and Path(sarif_path).resolve() == report_path.resolve():
+        # The CLI writes the SARIF first and this action writes the JSON report
+        # after; one path for both would leave plain JSON where the upload looks.
+        print("::error::'sarif-path' and 'report-path' name the same file; give the SARIF its own path")
+        return 1
+    if sarif_path:
+        # The CLI writes the file only after an audit completes. Without this,
+        # a connection failure would leave an earlier step's file in place and
+        # an upload guarded by hashFiles() would ship stale findings as new.
+        try:
+            Path(sarif_path).unlink(missing_ok=True)
+        except OSError as e:
+            print(f"::error::'sarif-path' {sarif_path} cannot be replaced: {e}")
+            return 1
+    code, stdout, stderr = run_audit(target, version, extra_args, sarif_path)
 
     if not stdout.strip() or (code != 0 and code not in CLI_GATE_EXIT_CODES):
         print(f"::error::mcpscore could not audit {target} (exit {code})")
+        # Only the token this action injected: a stray `--sariffoo` in `args`
+        # is the CLI's own usage error, not a version problem.
+        if sarif_path and f"unrecognized arguments: --sarif={sarif_path}" in stderr:
+            print(
+                f"::error::'sarif-path' needs mcpscore {SARIF_MIN_VERSION} or later; "
+                "set `version` to it or leave it empty"
+            )
         sys.stderr.write(stderr)
         return 1
 
@@ -326,7 +377,6 @@ def main() -> int:
         sys.stderr.write(stdout)
         return 1
 
-    report_path = Path(env("report-path", "mcpscore-report.json"))
     report_path.write_text(stdout, encoding="utf-8")
     set_outputs(report)
     write_job_summary(report)

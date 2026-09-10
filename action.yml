@@ -34,6 +34,10 @@ inputs:
     description: "Where to write the JSON report."
     required: false
     default: "mcpscore-report.json"
+  sarif-path:
+    description: "Also write the failed rules as SARIF 2.1.0 to this path, for github/codeql-action/upload-sarif. Empty = off. Needs mcpscore 1.14.0 or later."
+    required: false
+    default: ""
   github-token:
     description: "Token used to post the PR comment. Needs pull-requests: write."
     required: false
@@ -85,4 +89,5 @@ runs:
         INPUT_COMMENT: ${{ inputs.comment }}
         INPUT_ARGS: ${{ inputs.args }}
         INPUT_REPORT_PATH: ${{ inputs.report-path }}
+        INPUT_SARIF_PATH: ${{ inputs.sarif-path }}
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
