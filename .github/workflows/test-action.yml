@@ -54,6 +54,39 @@ jobs:
           test "$ERA" = "legacy"
           test -f mcpscore-report.json
 
+  sarif-file-is-written:
+    # The end-to-end proof for `sarif-path`: the composite action, the real
+    # CLI from PyPI, and a real server. Pinned to the first engine release with
+    # --sarif so the job fails with the action's own "needs mcpscore 1.14.0"
+    # message, not a mystery, if the pin is ever lowered.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./
+        with:
+          target: https://mcp.deepwiki.com/mcp
+          version: "1.14.0"
+          sarif-path: mcpscore.sarif
+          comment: "false"
+      - name: Assert the SARIF file exists and carries findings for the target
+        shell: bash
+        run: |
+          test -f mcpscore.sarif
+          python3 - <<'PY'
+          import json
+          run = json.load(open("mcpscore.sarif", encoding="utf-8"))["runs"][0]
+          assert run["tool"]["driver"]["name"] == "mcpscore", run["tool"]
+          assert run["results"], "no results: DeepWiki has failed rules, the file should carry them"
+          for result in run["results"]:
+              assert result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == "mcp.deepwiki.com/mcp"
+              assert "primaryLocationLineHash" in result["partialFingerprints"]
+          print(f"{len(run['results'])} findings, all located on mcp.deepwiki.com/mcp")
+          PY
+
   gate-passes-and-fails:
     runs-on: ubuntu-latest
     permissions:

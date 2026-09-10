@@ -322,6 +322,11 @@ def main() -> int:
         # the combination too, but the message here names the input.
         print("::error::'sarif-path' must be a file path, not '-' (stdout carries the JSON report)")
         return 1
+    if sarif_path and any(arg == "--sarif" or arg.startswith("--sarif=") for arg in extra_args):
+        # argparse keeps the last occurrence, so a `--sarif` in `args` would
+        # silently redirect the file away from the path the upload step reads.
+        print("::error::'sarif-path' and a `--sarif` in `args` name two files; keep one (prefer the input)")
+        return 1
     code, stdout, stderr = run_audit(target, version, extra_args, sarif_path)
 
     if not stdout.strip() or (code != 0 and code not in CLI_GATE_EXIT_CODES):

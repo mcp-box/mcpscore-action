@@ -341,6 +341,37 @@ class TestSarifPath:
         assert action.main() == 1
         assert any("'sarif-path' must be a file path" in p for p in printed)
 
+    @pytest.mark.parametrize("args", ["--sarif other.sarif", "--sarif=other.sarif", "--smoke --sarif=x.sarif"])
+    def test_a_sarif_flag_in_args_cannot_override_the_input(self, monkeypatch: pytest.MonkeyPatch, args: str):
+        # argparse keeps the last --sarif, so the file would land somewhere the upload step does not look.
+        printed: list[str] = []
+        monkeypatch.setenv("INPUT_TARGET", "https://server.example/mcp")
+        monkeypatch.setenv("INPUT_SARIF_PATH", "findings.sarif")
+        monkeypatch.setenv("INPUT_ARGS", args)
+        monkeypatch.setattr(action, "run_audit", lambda *a: pytest.fail("the CLI must not run"))
+        monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(str(x) for x in a)))
+        assert action.main() == 1
+        assert any("name two files" in p for p in printed)
+
+    def test_a_sarif_flag_in_args_alone_still_passes_through(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        # Without the input, `args: --sarif=x.sarif` keeps working as before.
+        calls: list[tuple] = []
+        monkeypatch.setenv("INPUT_TARGET", "https://server.example/mcp")
+        monkeypatch.setenv("INPUT_ARGS", "--sarif=x.sarif")
+        monkeypatch.setenv("INPUT_REPORT_PATH", str(tmp_path / "report.json"))
+        monkeypatch.setenv("INPUT_COMMENT", "false")
+        monkeypatch.delenv("INPUT_SARIF_PATH", raising=False)
+        monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+
+        def fake_run_audit(*args):
+            calls.append(args)
+            return 0, json.dumps(make_report()), ""
+
+        monkeypatch.setattr(action, "run_audit", fake_run_audit)
+        assert action.main() == 0
+        assert calls == [("https://server.example/mcp", "", ["--sarif=x.sarif"], "")]
+
     def test_an_engine_without_the_flag_names_the_version_needed(self, monkeypatch: pytest.MonkeyPatch):
         printed: list[str] = []
         monkeypatch.setenv("INPUT_TARGET", "https://server.example/mcp")
