@@ -283,6 +283,77 @@ class TestMainWithCliGates:
         assert any("could not audit" in p for p in printed)
 
 
+class TestSarifPath:
+    """`sarif-path` passes `--sarif <path>` to the CLI, which writes the file itself."""
+
+    def _cmd(self, monkeypatch: pytest.MonkeyPatch, **kwargs) -> list[str]:
+        seen: dict[str, list[str]] = {}
+
+        def fake_run(cmd, **_):
+            seen["cmd"] = cmd
+
+            class Result:
+                returncode, stdout, stderr = 0, "{}", ""
+
+            return Result()
+
+        monkeypatch.setattr(action.subprocess, "run", fake_run)
+        action.run_audit("https://server.example/mcp", "", ["--smoke"], **kwargs)
+        return seen["cmd"]
+
+    def test_sarif_flag_precedes_the_extra_args(self, monkeypatch: pytest.MonkeyPatch):
+        assert self._cmd(monkeypatch, sarif_path="out.sarif") == [
+            "uvx",
+            "mcpscore",
+            "https://server.example/mcp",
+            "--json",
+            "--sarif",
+            "out.sarif",
+            "--smoke",
+        ]
+
+    def test_no_sarif_flag_by_default(self, monkeypatch: pytest.MonkeyPatch):
+        assert "--sarif" not in self._cmd(monkeypatch)
+
+    def test_main_passes_the_input_through(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        calls: list[tuple] = []
+        monkeypatch.setenv("INPUT_TARGET", "https://server.example/mcp")
+        monkeypatch.setenv("INPUT_SARIF_PATH", "findings.sarif")
+        monkeypatch.setenv("INPUT_REPORT_PATH", str(tmp_path / "report.json"))
+        monkeypatch.setenv("INPUT_COMMENT", "false")
+        monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+
+        def fake_run_audit(*args):
+            calls.append(args)
+            return 0, json.dumps(make_report()), ""
+
+        monkeypatch.setattr(action, "run_audit", fake_run_audit)
+        assert action.main() == 0
+        assert calls == [("https://server.example/mcp", "", [], "findings.sarif")]
+
+    def test_stdout_is_refused_as_a_sarif_path(self, monkeypatch: pytest.MonkeyPatch):
+        printed: list[str] = []
+        monkeypatch.setenv("INPUT_TARGET", "https://server.example/mcp")
+        monkeypatch.setenv("INPUT_SARIF_PATH", "-")
+        monkeypatch.setattr(action, "run_audit", lambda *a: pytest.fail("the CLI must not run"))
+        monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(str(x) for x in a)))
+        assert action.main() == 1
+        assert any("'sarif-path' must be a file path" in p for p in printed)
+
+    def test_an_engine_without_the_flag_names_the_version_needed(self, monkeypatch: pytest.MonkeyPatch):
+        printed: list[str] = []
+        monkeypatch.setenv("INPUT_TARGET", "https://server.example/mcp")
+        monkeypatch.setenv("INPUT_SARIF_PATH", "findings.sarif")
+        monkeypatch.setenv("INPUT_VERSION", "1.13.0")
+        stderr = "usage: mcpscore [-h] ...\nUsage error: unrecognized arguments: --sarif findings.sarif\n"
+        monkeypatch.setattr(action, "run_audit", lambda *a: (1, "", stderr))
+        monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(str(x) for x in a)))
+        assert action.main() == 1
+        assert any("could not audit" in p for p in printed)
+        assert any(f"needs mcpscore {action.SARIF_MIN_VERSION} or later" in p for p in printed)
+
+
 class TestPartialConfigBlocks:
     """The report is another program's output: a thin gate block must not crash the comment."""
 
