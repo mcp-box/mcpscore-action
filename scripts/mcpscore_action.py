@@ -57,9 +57,22 @@ def run_audit(target: str, version: str, extra_args: list[str], sarif_path: str 
 
     """
     spec = f"mcpscore@{version}" if version else "mcpscore"
-    cmd = ["uvx", spec, target, "--json", *(["--sarif", sarif_path] if sarif_path else []), *extra_args]
+    # Bound as one token: a path that begins with `-` would otherwise be read
+    # as another option instead of as the value.
+    cmd = ["uvx", spec, target, "--json", *([f"--sarif={sarif_path}"] if sarif_path else []), *extra_args]
     result = subprocess.run(cmd, capture_output=True, text=True, check=False, env=audit_env())
     return result.returncode, result.stdout, result.stderr
+
+
+def _names_sarif_option(arg: str) -> bool:
+    """Whether a CLI argument is ``--sarif``, ``--sarif=…``, or an unambiguous abbreviation argparse accepts.
+
+    argparse matches option prefixes, so ``--sari=x`` sets ``--sarif`` too.
+    ``--s`` and ``--sa`` clash with ``--stdio``/``--smoke`` and the CLI rejects
+    them itself; anything from ``--sar`` up is an alias for this purpose.
+    """
+    name = arg.split("=", 1)[0]
+    return len(name) >= len("--sar") and "--sarif".startswith(name)
 
 
 def percentage(score: int, max_score: int) -> int:
@@ -322,7 +335,7 @@ def main() -> int:
         # the combination too, but the message here names the input.
         print("::error::'sarif-path' must be a file path, not '-' (stdout carries the JSON report)")
         return 1
-    if sarif_path and any(arg == "--sarif" or arg.startswith("--sarif=") for arg in extra_args):
+    if sarif_path and any(_names_sarif_option(arg) for arg in extra_args):
         # argparse keeps the last occurrence, so a `--sarif` in `args` would
         # silently redirect the file away from the path the upload step reads.
         print("::error::'sarif-path' and a `--sarif` in `args` name two files; keep one (prefer the input)")
@@ -337,7 +350,11 @@ def main() -> int:
         # The CLI writes the file only after an audit completes. Without this,
         # a connection failure would leave an earlier step's file in place and
         # an upload guarded by hashFiles() would ship stale findings as new.
-        Path(sarif_path).unlink(missing_ok=True)
+        try:
+            Path(sarif_path).unlink(missing_ok=True)
+        except OSError as e:
+            print(f"::error::'sarif-path' {sarif_path} cannot be replaced: {e}")
+            return 1
     code, stdout, stderr = run_audit(target, version, extra_args, sarif_path)
 
     if not stdout.strip() or (code != 0 and code not in CLI_GATE_EXIT_CODES):

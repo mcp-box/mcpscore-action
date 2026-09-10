@@ -307,10 +307,13 @@ class TestSarifPath:
             "mcpscore",
             "https://server.example/mcp",
             "--json",
-            "--sarif",
-            "out.sarif",
+            "--sarif=out.sarif",
             "--smoke",
         ]
+
+    def test_a_path_beginning_with_a_hyphen_is_bound_to_the_flag(self, monkeypatch: pytest.MonkeyPatch):
+        # As a separate token, `-findings.sarif` would be parsed as an option.
+        assert "--sarif=-findings.sarif" in self._cmd(monkeypatch, sarif_path="-findings.sarif")
 
     def test_no_sarif_flag_by_default(self, monkeypatch: pytest.MonkeyPatch):
         assert "--sarif" not in self._cmd(monkeypatch)
@@ -341,7 +344,10 @@ class TestSarifPath:
         assert action.main() == 1
         assert any("'sarif-path' must be a file path" in p for p in printed)
 
-    @pytest.mark.parametrize("args", ["--sarif other.sarif", "--sarif=other.sarif", "--smoke --sarif=x.sarif"])
+    @pytest.mark.parametrize(
+        "args",
+        ["--sarif other.sarif", "--sarif=other.sarif", "--smoke --sarif=x.sarif", "--sari=x.sarif", "--sar x.sarif"],
+    )
     def test_a_sarif_flag_in_args_cannot_override_the_input(self, monkeypatch: pytest.MonkeyPatch, args: str):
         # argparse keeps the last --sarif, so the file would land somewhere the upload step does not look.
         printed: list[str] = []
@@ -384,6 +390,17 @@ class TestSarifPath:
         monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(str(x) for x in a)))
         assert action.main() == 1
         assert any("name the same file" in p for p in printed)
+
+    def test_a_directory_at_the_sarif_path_is_an_input_error(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        # unlink() raises on a directory; that must be a reported input error, not a traceback.
+        printed: list[str] = []
+        monkeypatch.setenv("INPUT_TARGET", "https://server.example/mcp")
+        monkeypatch.setenv("INPUT_SARIF_PATH", str(tmp_path))
+        monkeypatch.setenv("INPUT_REPORT_PATH", str(tmp_path / "report.json"))
+        monkeypatch.setattr(action, "run_audit", lambda *a: pytest.fail("the CLI must not run"))
+        monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(str(x) for x in a)))
+        assert action.main() == 1
+        assert any("cannot be replaced" in p for p in printed)
 
     def test_a_stale_sarif_file_is_removed_before_the_audit(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         # The CLI writes the file only after an audit completes; a connection
