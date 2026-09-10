@@ -67,12 +67,13 @@ def run_audit(target: str, version: str, extra_args: list[str], sarif_path: str 
 def _names_sarif_option(arg: str) -> bool:
     """Whether a CLI argument is ``--sarif``, ``--sarif=…``, or an unambiguous abbreviation argparse accepts.
 
-    argparse matches option prefixes, so ``--sari=x`` sets ``--sarif`` too.
-    ``--s`` and ``--sa`` clash with ``--stdio``/``--smoke`` and the CLI rejects
-    them itself; anything from ``--sar`` up is an alias for this purpose.
+    argparse matches option prefixes, so ``--sa=x`` already sets ``--sarif``:
+    no other mcpscore option begins with ``--sa`` (``--stdio`` and ``--smoke``
+    make ``--s`` ambiguous, and the CLI rejects that itself). Anything from
+    ``--sa`` up is an alias for this purpose.
     """
     name = arg.split("=", 1)[0]
-    return len(name) >= len("--sar") and "--sarif".startswith(name)
+    return len(name) >= len("--sa") and "--sarif".startswith(name)
 
 
 def percentage(score: int, max_score: int) -> int:
@@ -359,7 +360,9 @@ def main() -> int:
 
     if not stdout.strip() or (code != 0 and code not in CLI_GATE_EXIT_CODES):
         print(f"::error::mcpscore could not audit {target} (exit {code})")
-        if sarif_path and "unrecognized arguments: --sarif" in stderr:
+        # Only the token this action injected: a stray `--sariffoo` in `args`
+        # is the CLI's own usage error, not a version problem.
+        if sarif_path and f"unrecognized arguments: --sarif={sarif_path}" in stderr:
             print(
                 f"::error::'sarif-path' needs mcpscore {SARIF_MIN_VERSION} or later; "
                 "set `version` to it or leave it empty"

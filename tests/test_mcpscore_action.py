@@ -346,7 +346,14 @@ class TestSarifPath:
 
     @pytest.mark.parametrize(
         "args",
-        ["--sarif other.sarif", "--sarif=other.sarif", "--smoke --sarif=x.sarif", "--sari=x.sarif", "--sar x.sarif"],
+        [
+            "--sarif other.sarif",
+            "--sarif=other.sarif",
+            "--smoke --sarif=x.sarif",
+            "--sari=x.sarif",
+            "--sar x.sarif",
+            "--sa=x.sarif",  # the shortest prefix argparse resolves to --sarif
+        ],
     )
     def test_a_sarif_flag_in_args_cannot_override_the_input(self, monkeypatch: pytest.MonkeyPatch, args: str):
         # argparse keeps the last --sarif, so the file would land somewhere the upload step does not look.
@@ -427,12 +434,25 @@ class TestSarifPath:
         monkeypatch.setenv("INPUT_TARGET", "https://server.example/mcp")
         monkeypatch.setenv("INPUT_SARIF_PATH", "findings.sarif")
         monkeypatch.setenv("INPUT_VERSION", "1.13.0")
-        stderr = "usage: mcpscore [-h] ...\nUsage error: unrecognized arguments: --sarif findings.sarif\n"
+        stderr = "usage: mcpscore [-h] ...\nUsage error: unrecognized arguments: --sarif=findings.sarif\n"
         monkeypatch.setattr(action, "run_audit", lambda *a: (1, "", stderr))
         monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(str(x) for x in a)))
         assert action.main() == 1
         assert any("could not audit" in p for p in printed)
         assert any(f"needs mcpscore {action.SARIF_MIN_VERSION} or later" in p for p in printed)
+
+    def test_a_stray_option_in_args_is_not_blamed_on_the_engine_version(self, monkeypatch: pytest.MonkeyPatch):
+        # A current engine rejecting `--sariffoo` from `args` is a usage error, not a version problem.
+        printed: list[str] = []
+        monkeypatch.setenv("INPUT_TARGET", "https://server.example/mcp")
+        monkeypatch.setenv("INPUT_SARIF_PATH", "findings.sarif")
+        monkeypatch.setenv("INPUT_ARGS", "--sariffoo")
+        stderr = "Usage error: unrecognized arguments: --sariffoo\n"
+        monkeypatch.setattr(action, "run_audit", lambda *a: (1, "", stderr))
+        monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(str(x) for x in a)))
+        assert action.main() == 1
+        assert any("could not audit" in p for p in printed)
+        assert not any("needs mcpscore" in p for p in printed)
 
 
 class TestPartialConfigBlocks:
