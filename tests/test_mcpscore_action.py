@@ -528,10 +528,10 @@ def test_failure_guidance_includes_readiness_without_changing_gates(counted):
     )
     section = action._failed_rules_section(report)
     assert "Missing description" in section
-    assert "**Fix:** Describe the tool" in section
+    assert "**Fix:** ` Describe the tool" in section
     assert "Publish supportedVersions" in section
     assert ("counted in score" if counted else "informative") in section
-    assert "2 failed check(s)" in section
+    assert "1 main check(s) failed; 1 readiness check(s) failed" in section
 
 
 def test_repair_text_is_literal_and_old_reports_still_render():
@@ -539,9 +539,59 @@ def test_repair_text_is_literal_and_old_reports_still_render():
     assert "**Fix:**" not in action._failed_rules_section(report)
     report["results"][1]["suggested_fix"] = "<script>alert(1)</script> [click](https://host) @everyone `code`"
     section = action._failed_rules_section(report)
-    assert "<script>" not in section
-    assert "[click](" not in section
-    assert "@everyone" not in section
-    assert "&lt;script&gt;" in section
+    assert "**Fix:** `` <script>alert(1)</script> [click](https://host) @everyone `code` ``" in section
     report["results"][0]["suggested_fix"] = "Do not show passing advice"
     assert "Do not show" not in action._failed_rules_section(report)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "https://localhost/path",
+        "http://localhost:8080/a",
+        "ftp://localhost/file",
+        "user@example.com",
+        "@everyone",
+        "Server's description is missing",
+        "<script>alert(1)</script>",
+        "&lt;script&gt;",
+        'Use "search"',
+    ],
+)
+def test_literal_guidance_uses_a_markdown_code_span(text):
+    assert action._plain_markdown(text) == "` " + text + " `"
+
+
+@pytest.mark.parametrize("text", ["`code`", "`` @everyone ``", "` `` ``` <script> ```"])
+def test_publisher_backticks_cannot_break_out_of_literal_span(text):
+    rendered = action._plain_markdown(text)
+    delimiter, content, closing = (
+        rendered.split(" ", 1)[0],
+        rendered.split(" ", 1)[1].rsplit(" ", 1)[0],
+        rendered.rsplit(" ", 1)[1],
+    )
+    assert delimiter == closing
+    assert set(delimiter) == {"`"}
+    assert delimiter not in text
+    assert content == text
+
+
+@pytest.mark.parametrize("main_failed", [True, False])
+@pytest.mark.parametrize("readiness_failed", [True, False])
+def test_summary_counts_main_and_readiness_failures_separately(main_failed, readiness_failed):
+    report = make_report()
+    report["results"][1]["passed"] = not main_failed
+    report["readiness"]["results"] = [
+        {
+            "rule_id": "readiness_test",
+            "passed": not readiness_failed,
+            "severity": "HIGH",
+        }
+    ]
+    section = action._failed_rules_section(report)
+    if readiness_failed:
+        assert f"{int(main_failed)} main check(s) failed; 1 readiness check(s) failed" in section
+    elif main_failed:
+        assert "1 failed check(s)" in section
+    else:
+        assert section == "All checks passed. 🎉"

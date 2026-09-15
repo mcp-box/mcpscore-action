@@ -14,7 +14,6 @@ Exit codes:
 
 from __future__ import annotations
 
-import html
 import json
 import os
 import subprocess
@@ -129,10 +128,10 @@ def _severity_table(report: dict) -> str:
 def _plain_markdown(value: str) -> str:
     """Render report text literally without active Markdown, HTML or mentions."""
     text = " ".join(value.split())
-    text = html.escape(text, quote=True)
-    for character in "\\`*_{}[]()#+-.!|~":
-        text = text.replace(character, "\\" + character)
-    return text.replace("@", "&#64;")
+    delimiter = "`"
+    while delimiter in text:
+        delimiter += "`"
+    return delimiter + " " + text + " " + delimiter
 
 
 def _failed_rules_section(report: dict) -> str:
@@ -154,7 +153,12 @@ def _failed_rules_section(report: dict) -> str:
         if isinstance(hint, str) and hint.strip():
             item += "\n  **Fix:** " + _plain_markdown(hint)
         items.append(item)
-    return f"<details><summary>{len(failed)} failed check(s)</summary>\n\n" + "\n".join(items) + "\n\n</details>"
+    readiness_failed = sum(is_readiness for _, is_readiness in failed)
+    main_failed = len(failed) - readiness_failed
+    summary = f"{main_failed} failed check(s)"
+    if readiness_failed:
+        summary = f"{main_failed} main check(s) failed; {readiness_failed} readiness check(s) failed"
+    return f"<details><summary>{summary}</summary>\n\n" + "\n".join(items) + "\n\n</details>"
 
 
 def _config_lines(report: dict) -> list[str]:
