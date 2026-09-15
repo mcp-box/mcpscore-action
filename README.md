@@ -328,6 +328,14 @@ keeps them informative.
 is in the [changelog](CHANGELOG.md), and the full guide with the same
 examples lives at [docs.mcpscore.dev/github-action](https://docs.mcpscore.dev/github-action).
 
+## Repair guidance in reports
+
+Failed checks in the job summary and PR comment show the engine's message and,
+when present, its plain-text repair hint. Older reports without hints still
+render. Readiness findings are labeled as informative or counted in the score;
+showing them does not change the score gates. The JSON artifact retains the
+original findings; SARIF repair guidance requires an engine version that exports it.
+
 ## License
 
 MIT

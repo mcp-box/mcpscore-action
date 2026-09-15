@@ -9,6 +9,11 @@ release in the 1.x line moves; `@v1.2.0` pins one release.
 
 ## [Unreleased]
 
+### Added
+
+- Show failure messages and repair hints in report summaries, with literal text
+  rendering and explicit informative/counted readiness labels. Old reports remain supported.
+
 ## [1.2.0] - 2026-09-10
 
 ### Added

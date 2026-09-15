@@ -125,12 +125,42 @@ def _severity_table(report: dict) -> str:
     return "\n".join([header, divider, passed, failed])
 
 
+def _plain_markdown(value: str) -> str:
+    """Render report text literally without active Markdown, HTML or mentions."""
+    text = " ".join(value.split())
+    delimiter = "`"
+    while delimiter in text:
+        delimiter += "`"
+    return delimiter + " " + text + " " + delimiter
+
+
 def _failed_rules_section(report: dict) -> str:
-    failed = [r for r in report["results"] if not r["passed"]]
+    failed = [(r, False) for r in report["results"] if not r["passed"]]
+    readiness = report.get("readiness") or {}
+    failed.extend((r, True) for r in readiness.get("results", []) if not r["passed"])
     if not failed:
         return "All checks passed. 🎉"
-    items = "\n".join(f"- `{r['rule_id']}` ({r['severity']})" for r in failed)
-    return f"<details><summary>{len(failed)} failed check(s)</summary>\n\n{items}\n\n</details>"
+    items = []
+    for result, is_readiness in failed:
+        label = ""
+        if is_readiness:
+            label = " — readiness, " + ("counted in score" if readiness.get("counted_in_main") else "informative")
+        item = f"- `{result['rule_id']}` ({result['severity']}){label}"
+        message = result.get("message")
+        if isinstance(message, str) and message.strip():
+            item += "\n  " + _plain_markdown(message)
+        hint = result.get("suggested_fix")
+        if isinstance(hint, str) and hint.strip():
+            item += "\n  **Fix:** " + _plain_markdown(hint)
+        items.append(item)
+    readiness_failed = sum(is_readiness for _, is_readiness in failed)
+    main_failed = len(failed) - readiness_failed
+    summary = f"{main_failed} failed check(s)"
+    if readiness_failed:
+        summary = (f"{main_failed} main check(s) failed; " if main_failed else "") + (
+            f"{readiness_failed} readiness check(s) failed"
+        )
+    return f"<details><summary>{summary}</summary>\n\n" + "\n".join(items) + "\n\n</details>"
 
 
 def _config_lines(report: dict) -> list[str]:
