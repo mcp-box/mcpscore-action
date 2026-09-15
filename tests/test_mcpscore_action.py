@@ -589,9 +589,29 @@ def test_summary_counts_main_and_readiness_failures_separately(main_failed, read
         }
     ]
     section = action._failed_rules_section(report)
-    if readiness_failed:
-        assert f"{int(main_failed)} main check(s) failed; 1 readiness check(s) failed" in section
+    if readiness_failed and main_failed:
+        assert "1 main check(s) failed; 1 readiness check(s) failed" in section
+    elif readiness_failed:
+        assert "<summary>1 readiness check(s) failed</summary>" in section
+        assert "0 main" not in section
     elif main_failed:
         assert "1 failed check(s)" in section
     else:
         assert section == "All checks passed. 🎉"
+
+
+@pytest.mark.parametrize("field", ["message", "suggested_fix"])
+@pytest.mark.parametrize("payload", ["</details><script>alert(1)</script>", "` </details><script>alert(1)</script> ``"])
+def test_publisher_html_cannot_close_the_details_wrapper(field, payload):
+    report = make_report()
+    report["results"][1][field] = payload
+    section = action._failed_rules_section(report)
+    delimiter = "`" * (3 if "``" in payload else 1)
+    literal = delimiter + " " + payload + " " + delimiter
+    assert literal in section
+    outside = section.replace(literal, "LITERAL")
+    assert outside.startswith("<details><summary>")
+    assert outside.endswith("</details>")
+    assert outside.count("<details>") == 1
+    assert outside.count("</details>") == 1
+    assert "<script>" not in outside

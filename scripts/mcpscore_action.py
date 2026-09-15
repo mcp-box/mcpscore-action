@@ -157,7 +157,9 @@ def _failed_rules_section(report: dict) -> str:
     main_failed = len(failed) - readiness_failed
     summary = f"{main_failed} failed check(s)"
     if readiness_failed:
-        summary = f"{main_failed} main check(s) failed; {readiness_failed} readiness check(s) failed"
+        summary = (f"{main_failed} main check(s) failed; " if main_failed else "") + (
+            f"{readiness_failed} readiness check(s) failed"
+        )
     return f"<details><summary>{summary}</summary>\n\n" + "\n".join(items) + "\n\n</details>"
 
 
