@@ -508,3 +508,40 @@ class TestAuditEnvironment:
         assert seen["env"]["INPUT_TARGET"] == "./server.py"
         assert "PATH" in seen["env"]
         assert seen["cmd"][:2] == ["uvx", "mcpscore"]
+
+
+@pytest.mark.parametrize("counted", [True, False])
+def test_failure_guidance_includes_readiness_without_changing_gates(counted):
+    report = make_report()
+    report["results"][1].update(message="Missing description", suggested_fix="Describe the tool.")
+    report["readiness"].update(
+        counted_in_main=counted,
+        results=[
+            {
+                "rule_id": "readiness_test",
+                "passed": False,
+                "severity": "HIGH",
+                "message": "Missing version",
+                "suggested_fix": "Publish supportedVersions.",
+            }
+        ],
+    )
+    section = action._failed_rules_section(report)
+    assert "Missing description" in section
+    assert "**Fix:** Describe the tool" in section
+    assert "Publish supportedVersions" in section
+    assert ("counted in score" if counted else "informative") in section
+    assert "2 failed check(s)" in section
+
+
+def test_repair_text_is_literal_and_old_reports_still_render():
+    report = make_report()
+    assert "**Fix:**" not in action._failed_rules_section(report)
+    report["results"][1]["suggested_fix"] = "<script>alert(1)</script> [click](https://host) @everyone `code`"
+    section = action._failed_rules_section(report)
+    assert "<script>" not in section
+    assert "[click](" not in section
+    assert "@everyone" not in section
+    assert "&lt;script&gt;" in section
+    report["results"][0]["suggested_fix"] = "Do not show passing advice"
+    assert "Do not show" not in action._failed_rules_section(report)
