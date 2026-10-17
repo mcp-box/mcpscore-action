@@ -15,7 +15,7 @@ inputs:
     required: false
     default: ""
   min-score:
-    description: "Fail the job if the main score percentage (0–100) is below this. Empty = no gate."
+    description: "Fail the job if the main score percentage (0–100) is below this, or if the audit was partial. Empty = no gate."
     required: false
     default: ""
   min-readiness:

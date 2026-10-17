@@ -75,6 +75,32 @@ class TestEvaluateGate:
         # A stdio server gets readiness max_score 0 — the gate must not fire.
         assert action.evaluate_gate(make_report(readiness=0, readiness_max=0), "", "50") == []
 
+    def test_partial_audit_fails_min_score_even_above_threshold(self):
+        reason = "Server requires authentication (HTTP 401); scored the unauthenticated surface only."
+        failures = action.evaluate_gate(make_report(24, 27) | {"partial": True, "partial_reason": reason}, "80", "")
+        assert failures == [
+            "min-score 80: this was a partial audit; its score covers only the observable surface and cannot "
+            f"demonstrate the threshold. {reason} In this action, the credential goes in MCPSCORE_TOKEN or a "
+            "header in `args`."
+        ]
+
+    def test_partial_audit_without_reason_still_fails_min_score(self):
+        failures = action.evaluate_gate(make_report(24, 27) | {"partial": True}, "80", "")
+        assert len(failures) == 1
+        assert "demonstrate the threshold. In this action, the credential" in failures[0]
+
+    def test_partial_audit_without_min_score_passes(self):
+        assert action.evaluate_gate(make_report(24, 27) | {"partial": True}, "", "") == []
+
+    def test_partial_audit_keeps_the_readiness_gate(self):
+        report = make_report(readiness=2, readiness_max=13) | {"partial": True}
+        failures = action.evaluate_gate(report, "", "50")
+        assert len(failures) == 1
+        assert failures[0].startswith("readiness 2/13")
+
+    def test_full_audit_is_judged_on_its_score(self):
+        assert action.evaluate_gate(make_report(88, 97) | {"partial": False}, "80", "") == []
+
     def test_both_gates_can_fail_together(self):
         failures = action.evaluate_gate(make_report(50, 97, readiness=1, readiness_max=13), "80", "50")
         assert len(failures) == 2

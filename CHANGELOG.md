@@ -9,6 +9,15 @@ release in the 1.x line moves; `@v1.2.0` pins one release.
 
 ## [Unreleased]
 
+### Changed
+
+- **A partial audit now fails `min-score`**, as it fails the CLI's
+  `--fail-under`. Without a working credential an auth-gated server is audited
+  only on its auth, TLS and transport surface, and that score used to pass the
+  gate. The job now fails with a message naming the partial audit and how to
+  pass a credential. A workflow that relied on a green partial run needs a
+  credential, or no `min-score`. `min-readiness` is unchanged.
+
 ### Added
 
 - Show failure messages and repair hints in report summaries, with literal text

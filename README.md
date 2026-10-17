@@ -102,9 +102,10 @@ whitespace, so write the header as one token with no space after the colon:
     args: --header=X-Api-Key:${{ secrets.MCP_API_KEY }}
 ```
 
-Without a credential an auth-gated server gets a partial audit, and
-`min-score` is judged on that partial score, which covers only the auth, TLS,
-and transport surface. Pass a credential before trusting the gate. See
+Without a credential an auth-gated server gets a partial audit, whose score
+covers only the auth, TLS, and transport surface. A partial audit always fails
+`min-score`, as it fails the CLI's `--fail-under`, so a missing secret cannot
+turn the job green. See
 [authenticated servers](https://docs.mcpscore.dev/authenticated-servers).
 
 ### Turn rules off for this repository
@@ -236,7 +237,7 @@ a commit and `version` to a mcpscore release:
 | Input           | Default                | What it does                                                                                                                                                                                         |
 |-----------------|------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `target`        | required               | Server URL (Streamable HTTP or SSE), or a local `.py` or `.js` path                                                                                                                                  |
-| `min-score`     | no gate                | Fail the job when the main score percentage (0–100) is below this. With a `mcpscore.toml` in the repo, that is the configured score                                                                  |
+| `min-score`     | no gate                | Fail the job when the main score percentage (0–100) is below this, or when the audit was partial. With a `mcpscore.toml` in the repo, that is the configured score                                   |
 | `min-readiness` | no gate                | Fail the job when the readiness percentage (0–100) is below this. Skipped when readiness was not assessed                                                                                            |
 | `comment`       | `true`                 | Post or update the report comment on the pull request                                                                                                                                                |
 | `args`          | —                      | Extra arguments passed to the mcpscore CLI, split on whitespace. Write each as one token, for example `--header=X-Api-Key:$KEY`                                                                      |
@@ -259,6 +260,7 @@ a commit and `version` to a mcpscore release:
 | Outcome                                                   | Log line                                                                              | Report published? |
 |-----------------------------------------------------------|---------------------------------------------------------------------------------------|-------------------|
 | Score under `min-score` or `min-readiness`                | `::error::score 70/91 (77%) is below the required 80%`                                | Yes               |
+| `min-score` set and the audit was partial                 | `::error::min-score 80: this was a partial audit; …`                                  | Yes               |
 | A configured `[gate]` tripped (CLI exit 3)                | `::error::mcpscore [gate] fail_on = HIGH: failed rule(s) …`                           | Yes               |
 | `--fail-under` passed through `args` not met (CLI exit 3) | ``::error::mcpscore exited 3: a --fail-under gate passed through `args` was not met`` | Yes               |
 | A `--smoke` check failed (CLI exit 4)                     | `::error::mcpscore --smoke: failed check(s) …`                                        | Yes               |
@@ -293,13 +295,14 @@ produced no report skips all of them.
   [GitHub Security Lab write-up](https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/)
   explains the trap.
 
-**The job passes, but the comment says the audit was partial**
+**`min-score` fails with `this was a partial audit`**
 
-- Cause: the server needs a credential and the workflow passed none, so
-  `min-score` was judged on the observable surface only. A clean auth
-  posture scores high on a handful of checks.
+- Cause: the server needs a credential and the workflow passed none, or the
+  server rejected it, so only the observable surface was audited. That score
+  cannot show the server meets the threshold.
 - Fix: export `MCPSCORE_TOKEN` from a secret, as above, so the gate judges the
-  full audit.
+  full audit. On a fork pull request secrets are not available; drop
+  `min-score` for those runs.
 
 **`sarif-path` fails with `'sarif-path' needs mcpscore 1.14.0 or later`**
 

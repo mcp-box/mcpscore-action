@@ -87,15 +87,24 @@ def evaluate_gate(report: dict, min_score: str, min_readiness: str) -> list[str]
     """Return the reasons the audit fails the configured thresholds (empty = pass).
 
     Thresholds are integer percentages passed as strings; an empty string
-    disables that gate. The readiness axis is only gated when the server was
-    actually assessed for readiness (``readiness.max_score > 0``).
+    disables that gate. A partial audit always fails ``min-score``, as it fails
+    the CLI's ``--fail-under``: its score covers only the observable surface.
+    The readiness axis is only gated when the server was actually assessed for
+    readiness (``readiness.max_score > 0``).
     """
     failures: list[str] = []
 
     main_pct = percentage(report["score"], report["max_score"])
     if min_score:
         threshold = int(min_score)
-        if main_pct < threshold:
+        if report.get("partial"):
+            reason = report.get("partial_reason")
+            failures.append(
+                f"min-score {threshold}: this was a partial audit; its score covers only the observable "
+                f"surface and cannot demonstrate the threshold.{f' {reason}' if reason else ''} "
+                "In this action, the credential goes in MCPSCORE_TOKEN or a header in `args`."
+            )
+        elif main_pct < threshold:
             failures.append(
                 f"score {report['score']}/{report['max_score']} ({main_pct}%) is below the required {threshold}%"
             )
