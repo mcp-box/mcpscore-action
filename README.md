@@ -225,7 +225,7 @@ Check the readiness line of a run before choosing the threshold.
 a commit and `version` to a mcpscore release:
 
 ```yaml
-- uses: mcp-box/mcpscore-action@<commit-sha>  # v1.2.0
+- uses: mcp-box/mcpscore-action@<commit-sha>  # v1.3.0
   with:
     target: https://your-server.example/mcp
     version: "1.12.0"
@@ -327,7 +327,7 @@ keeps them informative.
 
 ## Releases
 
-`@v1` moves to every 1.x release; `@v1.2.0` pins one. What changed in each
+`@v1` moves to every 1.x release; `@v1.3.0` pins one. What changed in each
 is in the [changelog](CHANGELOG.md), and the full guide with the same
 examples lives at [docs.mcpscore.dev/github-action](https://docs.mcpscore.dev/github-action).
 
