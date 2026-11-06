@@ -51,7 +51,8 @@ jobs:
         run: |
           echo "score=$SCORE/$MAX ($PCT%) era=$ERA"
           test -n "$SCORE"
-          test "$ERA" = "legacy"
+          # Any valid era: the live target's protocol support changes over time.
+          case "$ERA" in legacy|dual-era|modern) ;; *) echo "unexpected era: $ERA"; exit 1 ;; esac
           test -f mcpscore-report.json
 
   sarif-file-is-written:
